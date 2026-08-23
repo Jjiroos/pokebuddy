@@ -107,3 +107,24 @@ def test_un_refus_du_modele_devient_un_422_explicite(make_client):
 def test_sortie_non_conforme_au_schema_devient_un_502(make_client):
     resp = make_client(FakeProvider([])).post("/ask", json={"question": "Poids ?"})
     assert resp.status_code == 502
+
+
+def test_une_cle_invalide_donne_un_message_actionnable(make_client):
+    """Une clé absente fait échouer le démarrage ; une clé invalide ne se
+    découvre qu'au premier appel et ne doit pas ressortir en 500 opaque."""
+    import httpx
+    import openai
+
+    class Rejeteur(FakeProvider):
+        def complete(self, messages, *, schema=None, run_label=None):
+            raise openai.AuthenticationError(
+                "clé invalide",
+                response=httpx.Response(401, request=httpx.Request("POST", "https://x")),
+                body=None,
+            )
+
+    client = make_client(Rejeteur())
+    client.raise_server_exceptions = False
+    resp = client.post("/ask", json={"question": "Poids ?"})
+    assert resp.status_code == 503
+    assert "OPENAI_API_KEY" in resp.json()["detail"]
