@@ -1,0 +1,46 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pokebuddy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pokebuddy}
+      POSTGRES_DB: ${POSTGRES_DB:-pokebuddy}
+    ports:
+      - "5432:5432"
+    volumes:
+      # Volume nommé, jamais un bind mount : les données Postgres ne doivent
+      # pas atterrir sur le montage Windows /mnt/z.
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pokebuddy} -d ${POSTGRES_DB:-pokebuddy}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      # Sous WSL2, inotify ne traverse pas /mnt/ : sans polling le hot-reload
+      # est silencieusement mort.
+      WATCHFILES_FORCE_POLLING: "true"
+      # Dans le conteneur les caches vivent dans un volume nommé, ce qui les
+      # sort du montage Windows et les fait survivre aux rebuilds.
+      LLM_CACHE_PATH: /cache/llm.sqlite
+      POKEAPI_CACHE_DIR: /cache/pokeapi
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src:ro
+      - appcache:/cache
+    command: >
+      uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+      --reload --reload-dir /app/src
+
+volumes:
+  pgdata:
+  appcache:
