@@ -1,0 +1,25 @@
+# Secrets — cette ligne existe avant la première clé du projet
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+
+# Caches applicatifs (LLM, PokéAPI) — normalement hors du dépôt via $HOME
+.cache/
+*.sqlite
+*.sqlite3
+
+# Node (jalon 5)
+node_modules/
+dist/
+
+# Divers
+.DS_Store
+*.log
