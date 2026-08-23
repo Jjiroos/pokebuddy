@@ -63,6 +63,8 @@ class OpenAIProvider:
         verbosity: str = "low",
         timeout_s: float = 60.0,
         max_retries: int = 5,
+        retry_wait_initial: float = 1.0,
+        http_client: Any | None = None,
     ) -> None:
         # Volontairement os.environ[...] et non .get(...) : une clé absente doit
         # faire échouer le démarrage, pas produire un 401 obscur à la première
@@ -71,13 +73,18 @@ class OpenAIProvider:
 
         # max_retries=0 : le SDK sait réessayer, mais on veut que la politique
         # de reprise soit explicite, lisible et testable. Une seule couche.
-        self._client = OpenAI(api_key=api_key, timeout=timeout_s, max_retries=0)
+        # http_client injectable : les tests branchent un transport factice pour
+        # vérifier ce qui part réellement sur le fil, sans clé ni réseau.
+        self._client = OpenAI(
+            api_key=api_key, timeout=timeout_s, max_retries=0, http_client=http_client
+        )
 
         self.model = model
         self._cache = cache
         self._reasoning_effort = reasoning_effort
         self._verbosity = verbosity
         self._max_retries = max_retries
+        self._retry_wait_initial = retry_wait_initial
 
     # -- paramètres d'appel ------------------------------------------------
 
@@ -141,7 +148,7 @@ class OpenAIProvider:
         @retry(
             retry=retry_if_exception_type(_RETRYABLE),
             stop=stop_after_attempt(self._max_retries),
-            wait=wait_exponential_jitter(initial=1, max=30),
+            wait=wait_exponential_jitter(initial=self._retry_wait_initial, max=30),
             reraise=True,
         )
         def _send() -> Any:

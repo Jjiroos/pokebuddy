@@ -1,0 +1,91 @@
+{
+  "id": 6,
+  "name": "charizard",
+  "generation": {
+    "name": "generation-i",
+    "url": "https://pokeapi.co/api/v2/generation/1/"
+  },
+  "evolves_from_species": {
+    "name": "charmeleon",
+    "url": "https://pokeapi.co/api/v2/pokemon-species/5/"
+  },
+  "pokedex_numbers": [
+    {
+      "entry_number": 6,
+      "pokedex": {
+        "name": "national",
+        "url": "https://pokeapi.co/api/v2/pokedex/1/"
+      }
+    },
+    {
+      "entry_number": 6,
+      "pokedex": {
+        "name": "kanto",
+        "url": "https://pokeapi.co/api/v2/pokedex/2/"
+      }
+    },
+    {
+      "entry_number": 231,
+      "pokedex": {
+        "name": "original-johto",
+        "url": "https://pokeapi.co/api/v2/pokedex/3/"
+      }
+    },
+    {
+      "entry_number": 236,
+      "pokedex": {
+        "name": "updated-johto",
+        "url": "https://pokeapi.co/api/v2/pokedex/7/"
+      }
+    },
+    {
+      "entry_number": 111,
+      "pokedex": {
+        "name": "conquest-gallery",
+        "url": "https://pokeapi.co/api/v2/pokedex/11/"
+      }
+    },
+    {
+      "entry_number": 85,
+      "pokedex": {
+        "name": "kalos-central",
+        "url": "https://pokeapi.co/api/v2/pokedex/12/"
+      }
+    },
+    {
+      "entry_number": 6,
+      "pokedex": {
+        "name": "letsgo-kanto",
+        "url": "https://pokeapi.co/api/v2/pokedex/26/"
+      }
+    },
+    {
+      "entry_number": 380,
+      "pokedex": {
+        "name": "galar",
+        "url": "https://pokeapi.co/api/v2/pokedex/27/"
+      }
+    },
+    {
+      "entry_number": 169,
+      "pokedex": {
+        "name": "blueberry",
+        "url": "https://pokeapi.co/api/v2/pokedex/33/"
+      }
+    },
+    {
+      "entry_number": 153,
+      "pokedex": {
+        "name": "lumiose-city",
+        "url": "https://pokeapi.co/api/v2/pokedex/34/"
+      }
+    },
+    {
+      "entry_number": 6,
+      "pokedex": {
+        "name": "champions",
+        "url": "https://pokeapi.co/api/v2/pokedex/36/"
+      }
+    }
+  ]
+}

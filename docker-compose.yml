@@ -6,7 +6,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pokebuddy}
       POSTGRES_DB: ${POSTGRES_DB:-pokebuddy}
     ports:
-      - "5432:5432"
+      # 5432 est souvent déjà pris par un PostgreSQL local. Le port hôte est
+      # donc réglable ; dans le réseau compose, l'API joint toujours db:5432.
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       # Volume nommé, jamais un bind mount : les données Postgres ne doivent
       # pas atterrir sur le montage Windows /mnt/z.
