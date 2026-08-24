@@ -1,0 +1,413 @@
+# Les 40 questions d'évaluation du jalon 2.
+#
+# Écrites et commitées AVANT le premier run, délibérément. Les rédiger après
+# avoir vu le système échouer reviendrait à choisir les questions qu'on sait
+# déjà cassées, et à publier une progression flatteuse. Le commit qui introduit
+# ce fichier ne contient que lui : sa date est la preuve de l'ordre.
+#
+# Chaque question porte :
+#   expected — la vérité terrain, en clair, pour un lecteur humain
+#   source   — de quoi la revérifier : requête SQL, ou identifiant de carte TCGdex
+#   check    — la règle de correspondance appliquée par eval/grader.py
+#
+# Répartition imposée par le §7 du plan : 15 factuel, 10 agrégation,
+# 10 illustrateur, 5 pièges.
+#
+# Les agrégations disent « formes standard » et les requêtes filtrent sur
+# is_default : PokéAPI expose méga-évolutions, formes régionales et Gigamax
+# comme des lignes `pokemon` à part entière, et les compter changerait la
+# réponse sans changer la question.
+
+# --------------------------------------------------------------------------
+# 15 questions factuelles — stats, types, évolutions
+# --------------------------------------------------------------------------
+
+- id: factuel-stats-dracaufeu
+  category: factuel
+  question: "Quelles sont les statistiques de base de Dracaufeu (PV, Attaque, Défense, Attaque Spéciale, Défense Spéciale, Vitesse) ?"
+  expected: "78 PV, 84 Att, 78 Déf, 109 Att.Spé, 85 Déf.Spé, 100 Vit"
+  source: "sql: select hp, attack, defense, special_attack, special_defense, speed from pokemon where name = 'charizard'"
+  check:
+    kind: numbers_all
+    values: [78, 84, 109, 85, 100]
+
+- id: factuel-types-bulbizarre
+  category: factuel
+  question: "De quels types est Bulbizarre ?"
+  expected: "Plante et Poison"
+  source: "sql: select t.name from pokemon p join pokemon_types pt on pt.pokemon_id = p.id join types t on t.id = pt.type_id where p.name = 'bulbasaur'"
+  check:
+    kind: names
+    all_of: [[plante, grass], [poison]]
+
+- id: factuel-evolution-dracaufeu
+  category: factuel
+  question: "De quel Pokémon Dracaufeu évolue-t-il directement ?"
+  expected: "Reptincel"
+  source: "sql: select p.name from species s join species p on p.id = s.evolves_from_species_id where s.name = 'charizard'"
+  check:
+    kind: names
+    all_of: [[reptincel, charmeleon]]
+
+- id: factuel-types-leviator
+  category: factuel
+  question: "De quels types est Léviator ?"
+  expected: "Eau et Vol — et surtout pas Dragon"
+  source: "sql: select t.name from pokemon p join pokemon_types pt on pt.pokemon_id = p.id join types t on t.id = pt.type_id where p.name = 'gyarados'"
+  check:
+    kind: names
+    all_of: [[eau, water], [vol, flying]]
+    # L'erreur classique, chez les humains comme chez les modèles.
+    none_of: [[dragon]]
+
+- id: factuel-stats-ronflex
+  category: factuel
+  question: "Quelles sont les statistiques de base de Ronflex ?"
+  expected: "160 PV, 110 Att, 65 Déf, 65 Att.Spé, 110 Déf.Spé, 30 Vit"
+  source: "sql: select hp, attack, defense, special_attack, special_defense, speed from pokemon where name = 'snorlax'"
+  check:
+    kind: numbers_all
+    values: [160, 110, 65, 30]
+
+- id: factuel-dex-mewtwo
+  category: factuel
+  question: "Quel est le numéro du Pokédex national de Mewtwo ?"
+  expected: "150"
+  source: "sql: select national_dex_number from pokemon where name = 'mewtwo'"
+  check:
+    kind: number
+    value: 150
+
+- id: factuel-types-magneti
+  category: factuel
+  question: "De quels types est Magnéti ?"
+  expected: "Électrik et Acier"
+  source: "sql: select t.name from pokemon p join pokemon_types pt on pt.pokemon_id = p.id join types t on t.id = pt.type_id where p.name = 'magnemite'"
+  check:
+    kind: names
+    all_of: [[electrik, electric, electrique], [acier, steel]]
+
+- id: factuel-evolution-nymphali
+  category: factuel
+  question: "De quel Pokémon Nymphali évolue-t-il ?"
+  expected: "Évoli"
+  source: "sql: select p.name from species s join species p on p.id = s.evolves_from_species_id where s.name = 'sylveon'"
+  check:
+    kind: names
+    all_of: [[evoli, eevee]]
+
+- id: factuel-type-nymphali
+  category: factuel
+  question: "De quel type est Nymphali ?"
+  expected: "Fée, et uniquement Fée"
+  source: "sql: select t.name from pokemon p join pokemon_types pt on pt.pokemon_id = p.id join types t on t.id = pt.type_id where p.name = 'sylveon'"
+  check:
+    kind: names
+    all_of: [[fee, fairy]]
+    none_of: [[normal], [psy, psychic, psychique]]
+
+- id: factuel-poids-ronflex
+  category: factuel
+  question: "Combien pèse Ronflex, en kilogrammes ?"
+  expected: "460 kg"
+  source: "sql: select weight_hg from pokemon where name = 'snorlax'  -- 4600 hg"
+  check:
+    kind: number
+    value: 460
+
+- id: factuel-total-arceus
+  category: factuel
+  question: "Quel est le total des six statistiques de base d'Arceus ?"
+  expected: "720"
+  source: "sql: select hp + attack + defense + special_attack + special_defense + speed from pokemon where name = 'arceus'"
+  check:
+    kind: number
+    value: 720
+
+- id: factuel-generation-lanssorien
+  category: factuel
+  question: "De quelle génération Lanssorien est-il originaire ?"
+  expected: "Huitième génération"
+  source: "sql: select generation from species where name = 'dragapult'"
+  check:
+    kind: number
+    value: 8
+
+- id: factuel-evolution-pharamp
+  category: factuel
+  question: "De quel Pokémon Pharamp évolue-t-il ?"
+  expected: "Lainergie"
+  source: "sql: select p.name from species s join species p on p.id = s.evolves_from_species_id where s.name = 'ampharos'"
+  check:
+    kind: names
+    all_of: [[lainergie, flaaffy]]
+
+- id: factuel-stats-mewtwo
+  category: factuel
+  question: "Quelles sont les statistiques de base de Mewtwo ?"
+  expected: "106 PV, 110 Att, 90 Déf, 154 Att.Spé, 90 Déf.Spé, 130 Vit"
+  source: "sql: select hp, attack, defense, special_attack, special_defense, speed from pokemon where name = 'mewtwo'"
+  check:
+    kind: numbers_all
+    values: [106, 110, 90, 154, 130]
+
+- id: factuel-types-lucario
+  category: factuel
+  question: "De quels types est Lucario ?"
+  expected: "Combat et Acier"
+  source: "sql: select t.name from pokemon p join pokemon_types pt on pt.pokemon_id = p.id join types t on t.id = pt.type_id where p.name = 'lucario'"
+  check:
+    kind: names
+    all_of: [[combat, fighting], [acier, steel]]
+
+# --------------------------------------------------------------------------
+# 10 questions d'agrégation — comptages, filtres, tris
+# C'est ici que l'outil SQL du jalon 3 doit creuser l'écart.
+# --------------------------------------------------------------------------
+
+- id: agregation-eau-rapides
+  category: agregation
+  question: "Quels Pokémon de type Eau ont une Vitesse de base strictement supérieure à 130 ? Ne compte que les formes standard."
+  expected: "Hastacuda (136) et Hotte-de-Fer (136)"
+  source: "sql: select p.name, p.speed from pokemon p join pokemon_types pt on pt.pokemon_id = p.id join types t on t.id = pt.type_id where t.name = 'water' and p.speed > 130 and p.is_default"
+  check:
+    kind: names
+    all_of: [[hastacuda, barraskewda], [hotte-de-fer, iron bundle, iron-bundle]]
+    none_of: [[amphinobi, greninja], [mustéflott, floatzel]]
+
+- id: agregation-especes-gen1
+  category: agregation
+  question: "Combien d'espèces de Pokémon la première génération compte-t-elle ?"
+  expected: "151"
+  source: "sql: select count(*) from species where generation = 1"
+  check:
+    kind: number
+    value: 151
+
+- id: agregation-especes-gen9
+  category: agregation
+  question: "Combien d'espèces de Pokémon la neuvième génération compte-t-elle ?"
+  expected: "120"
+  source: "sql: select count(*) from species where generation = 9"
+  check:
+    kind: number
+    value: 120
+
+- id: agregation-attaque-max
+  category: agregation
+  question: "Quel Pokémon possède la plus grande statistique d'Attaque de base, formes standard uniquement ?"
+  expected: "Katagami, 181 en Attaque"
+  source: "sql: select name, attack from pokemon where is_default order by attack desc nulls last limit 1"
+  check:
+    kind: names
+    all_of: [[katagami, kartana]]
+
+- id: agregation-plus-rapide
+  category: agregation
+  question: "Quel Pokémon possède la plus grande statistique de Vitesse de base, formes standard uniquement ?"
+  expected: "Regieleki, 200 en Vitesse"
+  source: "sql: select name, speed from pokemon where is_default order by speed desc nulls last limit 1"
+  check:
+    kind: names
+    all_of: [[regieleki]]
+
+- id: agregation-feu-vol
+  category: agregation
+  question: "Quels Pokémon ont exactement la double typographie Feu et Vol ? Ne compte que les formes standard."
+  expected: "Dracaufeu, Sulfura, Ho-Oh, Braisillon, Flambusard et Plumeline (Style Flamenco)"
+  source: "sql: select p.name from pokemon p where p.is_default and (select string_agg(t.name, '/' order by pt.slot) from pokemon_types pt join types t on t.id = pt.type_id where pt.pokemon_id = p.id) = 'fire/flying'"
+  check:
+    kind: names
+    # Plumeline n'est exigé ni interdit : seul son Style Flamenco est Feu/Vol,
+    # et une réponse qui l'omet reste défendable.
+    all_of:
+      - [dracaufeu, charizard]
+      - [sulfura, moltres]
+      - [ho oh, hooh]
+      - [braisillon, fletchinder]
+      - [flambusard, talonflame]
+
+- id: agregation-dragon-total
+  category: agregation
+  question: "Combien de Pokémon possèdent le type Dragon, formes standard uniquement ?"
+  expected: "70"
+  source: "sql: select count(*) from pokemon p join pokemon_types pt on pt.pokemon_id = p.id join types t on t.id = pt.type_id where t.name = 'dragon' and p.is_default"
+  check:
+    kind: number
+    value: 70
+
+- id: agregation-glace-defense
+  category: agregation
+  question: "Combien de Pokémon de type Glace ont une Défense de base strictement supérieure à 100 ? Ne compte que les formes standard."
+  expected: "6 — Séracrawl, Crustabri, Blizzeval, Hotte-de-Fer, Givrali, Bekaglaçon"
+  source: "sql: select count(*) from pokemon p join pokemon_types pt on pt.pokemon_id = p.id join types t on t.id = pt.type_id where t.name = 'ice' and p.defense > 100 and p.is_default"
+  check:
+    kind: number
+    value: 6
+
+- id: agregation-gen9-attaque-max
+  category: agregation
+  question: "Parmi les Pokémon de la neuvième génération, lequel a la plus grande Attaque de base ? Ne compte que les formes standard."
+  expected: "Glaivodo, 145 en Attaque"
+  source: "sql: select p.name, p.attack from pokemon p join species s on s.id = p.species_id where s.generation = 9 and p.is_default order by p.attack desc limit 1"
+  check:
+    kind: names
+    all_of: [[glaivodo, baxcalibur]]
+
+- id: agregation-plus-lourd
+  category: agregation
+  question: "Quels sont les Pokémon les plus lourds, formes standard uniquement ?"
+  expected: "Cosmovum et Bamboiselle, à égalité à 999,9 kg"
+  source: "sql: select name, weight_hg from pokemon where is_default order by weight_hg desc nulls last limit 2"
+  check:
+    kind: names
+    all_of: [[cosmovum, cosmoem], [bamboiselle, celesteela]]
+
+# --------------------------------------------------------------------------
+# 10 questions illustrateurs — JCC
+# Vérité terrain : api.tcgdex.net, champ `illustrator`.
+# Revérifiable en une commande :
+#   curl -s https://api.tcgdex.net/v2/fr/cards/<id> | jq .illustrator
+# --------------------------------------------------------------------------
+
+- id: illustrateur-dracaufeu-base
+  category: illustrateur
+  question: "Qui a illustré la carte Dracaufeu du Set de Base du JCC Pokémon (carte n° 4) ?"
+  expected: "Mitsuhiro Arita"
+  source: "tcgdex:base1-4"
+  check:
+    kind: names
+    all_of: [[mitsuhiro arita, arita]]
+
+- id: illustrateur-tortank-base
+  category: illustrateur
+  question: "Qui a illustré la carte Tortank du Set de Base du JCC Pokémon (carte n° 2) ?"
+  expected: "Ken Sugimori"
+  source: "tcgdex:base1-2"
+  check:
+    kind: names
+    all_of: [[ken sugimori, sugimori]]
+
+- id: illustrateur-voltali-jungle
+  category: illustrateur
+  question: "Qui a illustré la carte Voltali de l'extension Jungle (carte n° 4) ?"
+  expected: "Kagemaru Himeno"
+  source: "tcgdex:base2-4"
+  check:
+    kind: names
+    all_of: [[kagemaru himeno, himeno]]
+
+- id: illustrateur-lugia-neo
+  category: illustrateur
+  question: "Qui a illustré la carte Lugia de l'extension Neo Genesis (carte n° 9) ?"
+  expected: "Hironobu Yoshida"
+  source: "tcgdex:neo1-9"
+  check:
+    kind: names
+    all_of: [[hironobu yoshida, yoshida]]
+
+- id: illustrateur-rayquaza-ex-dragon
+  category: illustrateur
+  question: "Qui a illustré la carte Rayquaza ex de l'extension EX Dragon (carte n° 97) ?"
+  expected: "Hikaru Koike"
+  source: "tcgdex:ex3-97"
+  check:
+    kind: names
+    all_of: [[hikaru koike, koike]]
+
+- id: illustrateur-alakazam-expedition
+  category: illustrateur
+  question: "Qui a illustré la carte Alakazam de l'extension Expedition (carte n° 1) ?"
+  expected: "Hajime Kusajima"
+  source: "tcgdex:ecard1-1"
+  check:
+    kind: names
+    all_of: [[hajime kusajima, kusajima]]
+
+- id: illustrateur-vipeliere-nb
+  category: illustrateur
+  question: "Qui a illustré la carte Vipélierre de l'extension Noir & Blanc (carte n° 1) ?"
+  expected: "Kagemaru Himeno"
+  source: "tcgdex:bw1-1"
+  check:
+    kind: names
+    all_of: [[kagemaru himeno, himeno]]
+
+- id: illustrateur-florizarre-xy
+  category: illustrateur
+  question: "Qui a illustré la carte Florizarre EX de l'extension XY (carte n° 1) ?"
+  expected: "Eske Yoshinob"
+  source: "tcgdex:xy1-1"
+  check:
+    kind: names
+    all_of: [[eske yoshinob, yoshinob]]
+
+- id: illustrateur-dracaufeu-voltage
+  category: illustrateur
+  question: "Qui a illustré la carte Dracaufeu de l'extension Voltage Éclatant (carte n° 25) ?"
+  expected: "Ryuta Fuse"
+  source: "tcgdex:swsh4-25"
+  check:
+    kind: names
+    all_of: [[ryuta fuse, fuse]]
+
+- id: illustrateur-gardevoir-ev
+  category: illustrateur
+  question: "Qui a illustré la carte Gardevoir-ex de l'extension Écarlate et Violet (carte n° 245) ?"
+  expected: "Jiro Sasumo"
+  source: "tcgdex:sv01-245"
+  check:
+    kind: names
+    all_of: [[jiro sasumo, sasumo]]
+
+# --------------------------------------------------------------------------
+# 5 pièges — là où la mémoire d'un modèle est notoirement fausse :
+# formes régionales, Pokémon récents, illustrateur obscur.
+# --------------------------------------------------------------------------
+
+- id: piege-raichu-alola
+  category: piege
+  question: "De quels types est Raichu d'Alola ?"
+  expected: "Électrik et Psy — pas Électrik seul"
+  source: "sql: select t.name from pokemon p join pokemon_types pt on pt.pokemon_id = p.id join types t on t.id = pt.type_id where p.name = 'raichu-alola'"
+  check:
+    kind: names
+    all_of: [[electrik, electric, electrique], [psy, psychic, psychique]]
+
+- id: piege-axoloto-paldea
+  category: piege
+  question: "De quels types est Axoloto de Paldea ?"
+  expected: "Poison et Sol — la forme de Johto est Eau et Sol"
+  source: "sql: select t.name from pokemon p join pokemon_types pt on pt.pokemon_id = p.id join types t on t.id = pt.type_id where p.name = 'wooper-paldea'"
+  check:
+    kind: names
+    all_of: [[poison], [sol, ground]]
+    none_of: [[eau, water]]
+
+- id: piege-corayon-galar
+  category: piege
+  question: "De quel type est Corayon de Galar ?"
+  expected: "Spectre, et uniquement Spectre — la forme originale est Eau et Roche"
+  source: "sql: select t.name from pokemon p join pokemon_types pt on pt.pokemon_id = p.id join types t on t.id = pt.type_id where p.name = 'corsola-galar'"
+  check:
+    kind: names
+    all_of: [[spectre, ghost, fantome]]
+    none_of: [[eau, water], [roche, rock]]
+
+- id: piege-gromago-stats
+  category: piege
+  question: "Quelles sont les statistiques de base de Gromago, le Pokémon n° 1000 ?"
+  expected: "87 PV, 60 Att, 95 Déf, 133 Att.Spé, 91 Déf.Spé, 84 Vit"
+  source: "sql: select hp, attack, defense, special_attack, special_defense, speed from pokemon where name = 'gholdengo'"
+  check:
+    kind: numbers_all
+    values: [87, 60, 95, 133, 91, 84]
+
+- id: piege-illustrateur-melodelfe
+  category: piege
+  question: "Qui a illustré la carte Mélodelfe de l'extension L'appel des Légendes (carte n° 1) ?"
+  expected: "sui — un mononyme, écrit en minuscules"
+  source: "tcgdex:col1-1"
+  check:
+    kind: names
+    all_of: [[sui]]
