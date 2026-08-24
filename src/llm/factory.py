@@ -16,12 +16,14 @@ def get_cache() -> LLMCache:
 
 
 @lru_cache
-def get_provider() -> LLMProvider:
+def get_provider(model: str | None = None) -> LLMProvider:
+    """`model` permet à l'éval de balayer plusieurs modèles sans que rien
+    en dehors de ce module n'ait à connaître le fournisseur."""
     settings = get_settings()
     match settings.llm_provider:
         case "openai":
             return OpenAIProvider(
-                model=settings.openai_model,
+                model=model or settings.openai_model,
                 cache=get_cache(),
                 reasoning_effort=settings.openai_reasoning_effort,
                 verbosity=settings.openai_verbosity,
