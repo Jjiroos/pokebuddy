@@ -65,21 +65,34 @@ L'arbitrage du routeur est le travail d'ingénierie du projet.
 
 ---
 
-## Démarrage
+## Installation
+
+**Prérequis** : Docker et Docker Compose, `make`, `git`, et
+[`uv`](https://docs.astral.sh/uv/) pour ce qui tourne hors conteneur (tests et
+évaluation). Une clé d'API OpenAI est nécessaire à `/ask` et `/extract` ; la
+base, l'ingestion et les tests fonctionnent sans.
 
 ```bash
-cp .env.example .env        # y coller une vraie clé OpenAI
-make setup                  # venv, dépendances, hooks git
-make up                     # PostgreSQL + pgvector, API
-make migrate
-make ingest                 # ~1350 pokémon, une vingtaine de secondes
-make test
+git clone https://github.com/Jjiroos/pokebuddy.git
+cd pokebuddy
+cp .env.example .env         # puis coller une vraie clé dans OPENAI_API_KEY
+make setup                   # venv, dépendances, hooks git
+make up                      # PostgreSQL + pgvector, API
+make migrate                 # crée le schéma
+make ingest                  # ~1350 pokémon, une vingtaine de secondes
+make test                    # doit passer sans réseau
 ```
+
+Vérifier que la pile répond :
 
 ```bash
 curl -s localhost:8000/health | jq
+# → {"status":"ok","db":"ok","llm_provider":"openai","model":"gpt-5.6-luna"}
+
 curl -s localhost:8000/ask -H 'content-type: application/json' \
   -d '{"question":"Quelles sont les stats de base de Dracaufeu ?"}' | jq
+# → answer non vide, sources [], cost_usd > 0, cache_hit false
+# rejouer la même requête : cache_hit true, cost_usd 0, latence effondrée
 ```
 
 Documentation interactive sur <http://localhost:8000/docs>.
@@ -88,8 +101,29 @@ Documentation interactive sur <http://localhost:8000/docs>.
 |---|---|
 | `make up` / `make down` | démarre / arrête la pile |
 | `make ingest LIMIT=50` | ingestion partielle, pour itérer vite |
+| `make eval` | rejoue les 40 questions d'évaluation |
+| `make report RUN=eval/runs/<fichier>.json` | régénère le tableau d'un run passé |
 | `make psql` | console SQL sur la base |
+| `make lint` / `make fmt` | ruff |
 | `make clean` | repart de zéro, données comprises |
+
+`gitleaks` et `ruff` tournent en pre-commit, installés par `make setup`. `.env`
+est ignoré par git depuis un commit antérieur à l'écriture de toute clé.
+
+---
+
+## Dépannage
+
+| Symptôme | Cause et correctif |
+|---|---|
+| `port is already allocated` au `make up` | une autre instance de PostgreSQL occupe le port. Le défaut est déjà `5433` ; en changer via `POSTGRES_HOST_PORT` dans `.env` |
+| `/ask` répond `503 — le fournisseur LLM a rejeté la clé` | `OPENAI_API_KEY` absente ou invalide dans `.env` |
+| `/ask` répond `502` | le fournisseur est indisponible, ou a renvoyé une sortie non conforme au schéma |
+| `UnknownModelPricing` au démarrage | le modèle configuré n'est pas dans `src/llm/pricing.py`. L'y ajouter — la table lève plutôt que de publier un coût nul |
+| `make ingest` semble lent au premier lancement | normal : le cache PokéAPI se remplit. Les réingestions suivantes sont instantanées |
+| le rechargement à chaud d'uvicorn ne réagit pas | inotify ne traverse pas certains montages (réseau, WSL). `WATCHFILES_FORCE_POLLING=true` est déjà posé sur le service `api` |
+| un `uv run` nu recrée un venv lent dans le dépôt | passer par `make`, qui pose `UV_PROJECT_ENVIRONMENT` hors du dépôt. Aucun fichier de configuration `uv` ne permet de le fixer |
+| `make test` échoue sur la base | les tests ne touchent pas PostgreSQL. Si un test réseau apparaît, c'est un bug : aucun test du dépôt ne doit sortir |
 
 ---
 
@@ -167,27 +201,6 @@ sont des propriétés de la source, pas de l'ingestion — à garder en tête en
 
 ---
 
-## Développement
-
-Le dépôt vit sur un montage Windows (`/mnt/z`) sous WSL2, où les entrées/sorties
-sont lentes. Trois conséquences, toutes automatisées :
-
-* le venv est créé sous `$HOME` (`UV_PROJECT_ENVIRONMENT`, posé par le
-  `Makefile` — **passer par `make`**, un `uv run` nu recrée un venv lent dans le
-  dépôt) ;
-* les données PostgreSQL et les caches sont dans des volumes Docker nommés,
-  jamais des bind mounts ;
-* `WATCHFILES_FORCE_POLLING` est activé, sans quoi le rechargement à chaud
-  d'uvicorn est silencieusement mort à travers `/mnt/`.
-
-Le port hôte de PostgreSQL est `5433` par défaut (`POSTGRES_HOST_PORT`), 5432
-étant souvent déjà pris par une installation locale.
-
-`gitleaks` et `ruff` tournent en pre-commit. `.env` a été ignoré par git dans un
-commit antérieur à l'écriture de toute clé.
-
----
-
 ## Feuille de route
 
 | Jalon | Contenu | État |
@@ -205,8 +218,13 @@ commit antérieur à l'écriture de toute clé.
 | Source | Usage | Licence |
 |---|---|---|
 | [PokéAPI](https://pokeapi.co) | stats, espèces, types, évolutions, jeux | données libres ; politique d'usage imposant le cache local |
-| [Pokémon TCG API](https://pokemontcg.io) | cartes et illustrateurs *(à partir du jalon 2)* | usage non commercial |
+| [TCGdex](https://tcgdex.net) | illustrateurs des cartes — vérité terrain de l'évaluation | données communautaires ouvertes, usage non commercial |
 | [Bulbapedia](https://bulbapedia.bulbagarden.net) | lore et contexte *(jalon 3)* | CC BY-NC-SA — attribution obligatoire |
+
+Le plan initial visait [pokemontcg.io](https://pokemontcg.io) ; son point d'entrée
+`/v2/cards` renvoyait `502` au moment du jalon 2. TCGdex répond sans clé et expose
+directement le champ `illustrator` — chaque question illustrateur porte l'identifiant
+de carte qui permet de la revérifier en une commande.
 
 **Pokémon est une marque de Nintendo / Creatures / GAME FREAK.** Ce projet est
 un travail personnel non commercial, sans affiliation. Aucune image de carte ni

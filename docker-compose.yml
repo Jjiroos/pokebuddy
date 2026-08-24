@@ -11,7 +11,7 @@ services:
       - "${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       # Volume nommé, jamais un bind mount : les données Postgres ne doivent
-      # pas atterrir sur le montage Windows /mnt/z.
+      # pas atterrir sur le système de fichiers de l'hôte.
       - pgdata:/var/lib/postgresql/data
       - ./docker/init-db.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
     healthcheck:
@@ -24,11 +24,11 @@ services:
     build: .
     env_file: .env
     environment:
-      # Sous WSL2, inotify ne traverse pas /mnt/ : sans polling le hot-reload
-      # est silencieusement mort.
+      # inotify ne traverse pas certains montages (réseau, WSL) : sans polling
+      # le rechargement à chaud est silencieusement mort.
       WATCHFILES_FORCE_POLLING: "true"
-      # Dans le conteneur les caches vivent dans un volume nommé, ce qui les
-      # sort du montage Windows et les fait survivre aux rebuilds.
+      # Dans le conteneur les caches vivent dans un volume nommé : hors du
+      # système de fichiers de l'hôte, et survivant aux rebuilds.
       LLM_CACHE_PATH: /cache/llm.sqlite
       POKEAPI_CACHE_DIR: /cache/pokeapi
     depends_on:
