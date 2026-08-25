@@ -8,8 +8,9 @@ répondant de mémoire.
 outillé bat un LLM nu sur des faits vérifiables.** Le dépôt est construit autour
 de cette mesure, et l'historique des runs d'évaluation en est le livrable.
 
-> **État : jalon 1 sur 5 terminé.** Le socle répond, sans aucun outil — c'est la
-> ligne de base délibérée, et elle se trompe. Les chiffres arrivent au jalon 2.
+> **État : jalon 2 sur 5 terminé.** La ligne de base est mesurée : **53,8 %**
+> d'exactitude sur 40 questions vérifiables, sans aucun outil. C'est le chiffre
+> que les jalons suivants doivent battre.
 
 ---
 
@@ -19,16 +20,61 @@ de cette mesure, et l'historique des runs d'évaluation en est le livrable.
 
 ## Évaluation
 
-| Configuration | Exactitude | Latence p95 | Coût / requête |
+40 questions à réponse fermée, chacune portant sa vérité terrain et la requête
+SQL ou l'identifiant de carte qui permet de la revérifier. Elles ont été écrites
+et commitées **avant le premier run**, dans un commit qui ne contenait qu'elles :
+les écrire après aurait permis de choisir celles qu'on sait déjà cassées.
+
+Notation par grader déterministe, sans juge LLM — un juge est un second modèle,
+dont l'erreur devrait elle-même être mesurée.
+
+| Configuration | Exactitude | Latence p50 / p95 | Coût / requête |
 |---|---|---|---|
-| LLM nu, sans outil | *jalon 2* | | |
+| LLM nu, sans outil | **53,8 %** — 43/80 | 2,0 s / 16,9 s | 0,00011 $ |
 | + SQL et RAG | *jalon 3* | | |
 | Agent complet | *jalon 4* | | |
 
-Le tableau est vide parce que les 40 questions d'évaluation s'écrivent au
-jalon 2, **avant** toute amélioration. Les écrire après reviendrait à optimiser
-vers son intuition plutôt que vers un résultat, et à publier une progression
-flatteuse. Un tableau vide est plus honnête qu'un tableau inventé.
+### Où le modèle se casse
+
+| Catégorie | Exactitude | Ce que ça dit |
+|---|---|---|
+| Factuel — stats, types, évolutions | 27/30 — **90,0 %** | la mémoire du modèle couvre bien les faits de base |
+| Agrégation — comptages, filtres, tris | 10/20 — **50,0 %** | il ne sait pas parcourir un ensemble. Cible directe de l'outil SQL du jalon 3 |
+| Illustrateurs — cartes JCC | 4/20 — **20,0 %** | connaissance absente de sa mémoire. Cible du RAG |
+| Pièges — formes régionales, génération 9 | 2/10 — **20,0 %** | là où la mémoire n'est pas absente mais **fausse** |
+
+L'écart entre les personas est négligeable : 52,5 % pour `pokedex`, 55,0 % pour
+`factual`. La mise en scène ne dégrade pas l'exactitude à ce jalon.
+
+### Le modèle ne sait pas qu'il ne sait pas
+
+Chaque réponse porte une auto-évaluation de confiance, demandée par le schéma
+depuis le jalon 1.
+
+| Le modèle a… | Confiance moyenne qu'il s'attribue |
+|---|---|
+| répondu juste | 0,96 |
+| répondu faux | 0,73 |
+
+L'écart existe, mais il est trop faible pour servir de garde-fou. Le cas le plus
+net : interrogé sur les types d'**Axoloto de Paldea** (Poison/Sol), le modèle
+répond « Eau » — la forme de Kanto — avec une confiance de **0,97**. Une réponse
+fausse et sûre d'elle est pire qu'un aveu d'ignorance, et c'est précisément ce
+qui justifie d'aller chercher les faits ailleurs qu'en mémoire.
+
+### Reproductibilité
+
+La famille GPT-5 refuse `temperature=0` ; la garantie repose donc sur le cache
+disque. Deux runs consécutifs le vérifient : **78 des 80 appels rejoués au mot
+près, à coût nul** (0,0086 $ puis 0,0002 $). Les deux divergences sont les deux
+appels que le premier run avait perdus sur un plafond de débit du palier gratuit
+— les échecs ne sont délibérément pas mis en cache, donc ils sont rejoués.
+
+Le run publié ci-dessus est le second, complet et sans erreur. Latence et coût
+proviennent du premier, seul à avoir réellement appelé le fournisseur. Les deux
+artefacts sont dans `eval/runs/` : ce sont les pièces justificatives du tableau.
+La latence p95 est gonflée par les temporisations du palier gratuit, pas par le
+modèle — le p50 est plus représentatif.
 
 ---
 
@@ -69,8 +115,21 @@ L'arbitrage du routeur est le travail d'ingénierie du projet.
 
 **Prérequis** : Docker et Docker Compose, `make`, `git`, et
 [`uv`](https://docs.astral.sh/uv/) pour ce qui tourne hors conteneur (tests et
-évaluation). Une clé d'API OpenAI est nécessaire à `/ask` et `/extract` ; la
-base, l'ingestion et les tests fonctionnent sans.
+évaluation). Une clé d'API est nécessaire à `/ask` et `/extract` ; la base,
+l'ingestion et les tests fonctionnent sans.
+
+La configuration par défaut vise **Groq**, dont le palier Developer est gratuit
+et sans carte bancaire — de quoi rejouer l'évaluation sans rien dépenser. Créer
+une clé sur <https://console.groq.com>, puis la coller dans `.env` :
+
+```ini
+OPENAI_API_KEY=gsk_...
+OPENAI_BASE_URL=https://api.groq.com/openai/v1
+OPENAI_MODEL=openai/gpt-oss-120b
+```
+
+Pour viser OpenAI, vider `OPENAI_BASE_URL` et remettre un modèle de la table de
+`src/llm/pricing.py`.
 
 ```bash
 git clone https://github.com/Jjiroos/pokebuddy.git
@@ -87,7 +146,7 @@ Vérifier que la pile répond :
 
 ```bash
 curl -s localhost:8000/health | jq
-# → {"status":"ok","db":"ok","llm_provider":"openai","model":"gpt-5.6-luna"}
+# → {"status":"ok","db":"ok","llm_provider":"api.groq.com","model":"openai/gpt-oss-120b"}
 
 curl -s localhost:8000/ask -H 'content-type: application/json' \
   -d '{"question":"Quelles sont les stats de base de Dracaufeu ?"}' | jq
@@ -119,6 +178,8 @@ est ignoré par git depuis un commit antérieur à l'écriture de toute clé.
 | `port is already allocated` au `make up` | une autre instance de PostgreSQL occupe le port. Le défaut est déjà `5433` ; en changer via `POSTGRES_HOST_PORT` dans `.env` |
 | `/ask` répond `503 — le fournisseur LLM a rejeté la clé` | `OPENAI_API_KEY` absente ou invalide dans `.env` |
 | `/ask` répond `502` | le fournisseur est indisponible, ou a renvoyé une sortie non conforme au schéma |
+| `404` sur `/responses` | la passerelle visée par `OPENAI_BASE_URL` ne sert que `/chat/completions`. Ce projet parle l'API Responses : Gemini et OpenRouter ne conviennent pas en l'état |
+| `make eval` traîne, journaux pleins de `429` | plafond de tokens par minute du palier gratuit. Les appels sont rejoués automatiquement ; baisser `CONCURRENCY` dans `eval/runner.py` si le run n'aboutit pas |
 | `UnknownModelPricing` au démarrage | le modèle configuré n'est pas dans `src/llm/pricing.py`. L'y ajouter — la table lève plutôt que de publier un coût nul |
 | `make ingest` semble lent au premier lancement | normal : le cache PokéAPI se remplit. Les réingestions suivantes sont instantanées |
 | le rechargement à chaud d'uvicorn ne réagit pas | inotify ne traverse pas certains montages (réseau, WSL). `WATCHFILES_FORCE_POLLING=true` est déjà posé sur le service `api` |
@@ -191,6 +252,20 @@ est instantanée.
 de `src/llm/` ne connaît OpenAI. Mistral et Ollama arrivent au jalon 5, pour le
 comparatif d'arbitrage.
 
+En attendant, `OPENAI_BASE_URL` suffit à viser une autre passerelle — à une
+condition qui n'est pas cosmétique : **ce provider parle l'API Responses**, pas
+`/chat/completions`. La quasi-totalité des services dits « compatibles OpenAI »
+s'arrêtent à `/chat/completions` et renvoient un 404 sur `/responses` ; Gemini et
+OpenRouter en font partie. Groq l'implémente, d'où le choix.
+
+Deux conséquences visibles dans le code. `uses_reasoning_controls()` découpe le
+préfixe éditeur avant de tester la famille, sinon `openai/gpt-oss-120b`
+retomberait silencieusement sur `temperature` — que ce modèle accepte, donc sans
+erreur pour le signaler. Et le nom rapporté par `/health` est l'hôte réellement
+interrogé, pas la chaîne `openai` : une sonde de santé qui annonce le mauvais
+fournisseur ne vaut rien, et le nom entre dans la clé de cache, ce qui empêche
+deux endpoints servant le même modèle de se répondre l'un l'autre.
+
 ### Limites connues, dans la source
 
 `game_indices` de PokéAPI, qui alimente les apparitions par jeu, est renseigné
@@ -206,8 +281,8 @@ sont des propriétés de la source, pas de l'ingestion — à garder en tête en
 | Jalon | Contenu | État |
 |---|---|---|
 | 1 | Socle : API, couche LLM instrumentée, base de faits | **terminé** |
-| 2 | 40 questions d'évaluation, harnais, ligne de base chiffrée | à venir |
-| 3 | Outil SQL contraint, RAG avec citations obligatoires | |
+| 2 | 40 questions d'évaluation, harnais, ligne de base chiffrée | **terminé** |
+| 3 | Outil SQL contraint, RAG avec citations obligatoires | à venir |
 | 4 | Agent LangGraph, cas dégradés, traces Langfuse | |
 | 5 | CI, image publiée, front React, comparatif multi-fournisseurs | |
 
