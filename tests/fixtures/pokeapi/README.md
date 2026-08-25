@@ -9,7 +9,7 @@ aucun code ne les touche.
 |---|---|
 | `pokemon_charizard.json` | Deux types, `game_indices` renseigné (46 entrées) |
 | `pokemon_raichu_alola.json` | **Forme régionale** : `is_default: false`, id 10100, espèce `raichu` — une des cinq catégories « pièges » de l'évaluation du jalon 2 |
-| `species_charizard.json` | Évolution depuis `charmeleon` |
+| `species_charizard.json` | Évolution depuis `charmeleon`, et `names` pour le nom français |
 | `species_raichu.json` | Espèce partagée par Raichu et Raichu d'Alola, dex national 26 |
 
 Rafraîchir : `curl -s https://pokeapi.co/api/v2/pokemon/6` puis appliquer la

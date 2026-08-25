@@ -5,6 +5,7 @@ part du runner pour qu'on puisse le régénérer d'un run passé sans repayer le
 appels — et pour que les deux runs du jalon 3 se comparent avec le même code.
 
     python -m eval.report eval/runs/<fichier>.json
+    python -m eval.report <nouveau>.json --contre <baseline>.json
 """
 
 from __future__ import annotations
@@ -143,11 +144,116 @@ def render_markdown(payload: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+class QuestionsDiverge(ValueError):
+    """Deux runs sur des questions différentes ne se comparent pas.
+
+    L'empreinte du jeu de questions voyage dans chaque artefact précisément pour
+    rendre cette erreur impossible à commettre en silence : publier un « avant /
+    après » dont les deux moitiés n'ont pas répondu aux mêmes questions serait
+    la façon la plus simple de fabriquer une progression flatteuse.
+    """
+
+
+def _points(avant: tuple[int, int], apres: tuple[int, int]) -> str:
+    if not avant[1] or not apres[1]:
+        return "—"
+    ecart = 100 * apres[0] / apres[1] - 100 * avant[0] / avant[1]
+    signe = "+" if ecart >= 0 else "−"
+    return f"{signe}{_fr(abs(ecart))} pts"
+
+
+def render_comparison(
+    apres: dict[str, Any],
+    avant: dict[str, Any],
+    *,
+    nom_avant: str = "Avant",
+    nom_apres: str = "Après",
+) -> str:
+    empreintes = (avant["run"]["questions_sha256"], apres["run"]["questions_sha256"])
+    if empreintes[0] != empreintes[1]:
+        raise QuestionsDiverge(
+            f"Les deux runs n'ont pas répondu aux mêmes questions : {empreintes[0]} "
+            f"contre {empreintes[1]}. La comparaison n'aurait aucun sens."
+        )
+
+    a, b = avant["results"], apres["results"]
+    sa, sb = summarize(avant), summarize(apres)
+    lines: list[str] = []
+
+    lines.append(f"## Avant / après — `{apres['run']['model']}`")
+    lines.append("")
+    lines.append(
+        f"Runs `{avant['run']['label']}` et `{apres['run']['label']}`, "
+        f"même jeu de questions `{empreintes[0]}`."
+    )
+    lines.append("")
+
+    lines.append(f"| Catégorie | {nom_avant} | {nom_apres} | Écart |")
+    lines.append("|---|---|---|---|")
+    for category, label in CATEGORY_LABELS.items():
+        ra = [r for r in a if r["category"] == category]
+        rb = [r for r in b if r["category"] == category]
+        if not ra and not rb:
+            continue
+        lines.append(
+            f"| {label} | {_cell(ra)} | {_cell(rb)} | {_points(_accuracy(ra), _accuracy(rb))} |"
+        )
+    lines.append(
+        f"| **Ensemble** | **{_cell(a)}** | **{_cell(b)}** | "
+        f"**{_points(_accuracy(a), _accuracy(b))}** |"
+    )
+    lines.append("")
+
+    lines.append(f"| Mesure | {nom_avant} | {nom_apres} |")
+    lines.append("|---|---|---|")
+    cout_a = sa["cost_usd"] / len(a) if a else 0.0
+    cout_b = sb["cost_usd"] / len(b) if b else 0.0
+    lines.append(f"| Coût par question | {cout_a:.5f} $ | {cout_b:.5f} $ |")
+    for nom, key in (("Latence p50", "latency_p50"), ("Latence p95", "latency_p95")):
+        va, vb = sa[key], sb[key]
+        fmt = lambda v: "—" if v is None else f"{v:.0f} ms"  # noqa: E731
+        lines.append(f"| {nom} | {fmt(va)} | {fmt(vb)} |")
+    for nom, key in (
+        ("Confiance quand juste", "confidence_when_right"),
+        ("Confiance quand faux", "confidence_when_wrong"),
+    ):
+        va, vb = sa[key], sb[key]
+        fmt2 = lambda v: "—" if v is None else _fr(v, 2)  # noqa: E731
+        lines.append(f"| {nom} | {fmt2(va)} | {fmt2(vb)} |")
+
+    # Un run de référence est souvent celui qui a rejoué les questions perdues :
+    # il est alors massivement servi par le cache, et son coût comme sa latence
+    # ne mesurent plus rien. L'exactitude, elle, reste exacte — les réponses
+    # rejouées sont identiques au mot près. Mieux vaut que le rapport le dise
+    # que de laisser coller un « coût par question » de zéro dans un README.
+    for nom, resume, total in ((nom_avant, sa, len(a)), (nom_apres, sb, len(b))):
+        if total and resume["cache_hits"] / total > 0.5:
+            lines.append("")
+            lines.append(
+                f"> ⚠ **{nom}** est servi à {resume['cache_hits']}/{total} par le cache : "
+                "son coût et sa latence ne mesurent rien. Les relever sur le premier "
+                "run de la série, seul à avoir réellement appelé le fournisseur. "
+                "L'exactitude, elle, est inchangée — le cache rend la réponse au mot près."
+            )
+    return "\n".join(lines)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Rapport markdown d'un run d'évaluation.")
     parser.add_argument("run_file", type=Path, help="eval/runs/<fichier>.json")
+    parser.add_argument(
+        "--contre", type=Path, default=None, help="artefact de référence, pour un avant/après"
+    )
+    parser.add_argument("--avant", default="Avant", help="libellé de la colonne de référence")
+    parser.add_argument("--apres", default="Après", help="libellé de la colonne du nouveau run")
     args = parser.parse_args()
-    print(render_markdown(json.loads(args.run_file.read_text(encoding="utf-8"))))
+
+    payload = json.loads(args.run_file.read_text(encoding="utf-8"))
+    if args.contre is None:
+        print(render_markdown(payload))
+        return
+    baseline = json.loads(args.contre.read_text(encoding="utf-8"))
+    print(render_comparison(payload, baseline, nom_avant=args.avant, nom_apres=args.apres))
 
 
 if __name__ == "__main__":

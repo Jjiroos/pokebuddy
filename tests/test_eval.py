@@ -14,8 +14,9 @@ import yaml
 from pydantic import BaseModel
 
 from eval.grader import KINDS, grade, normalize
-from eval.report import render_markdown, summarize
+from eval.report import QuestionsDiverge, render_comparison, render_markdown, summarize
 from eval.runner import QUESTIONS_PATH, execute, load_questions
+from src.api.schemas import SqlPlan
 from src.llm.provider import LLMResponse, Message
 
 # --- le grader ------------------------------------------------------------
@@ -124,6 +125,11 @@ class ScriptedProvider:
         self._answer = answer
         self._parsed = parsed
         self.labels: list[str | None] = []
+        # Le harnais tape sur la vraie route : depuis le jalon 3 elle demande
+        # d'abord un plan SQL. Ce double n'en produit pas, ce qui fait replier
+        # `/ask` sur la réponse de mémoire — sans base, c'est le seul chemin
+        # exécutable hors ligne.
+        self.sql_calls = 0
 
     def complete(
         self,
@@ -134,7 +140,10 @@ class ScriptedProvider:
     ) -> LLMResponse:
         self.labels.append(run_label)
         parsed = None
-        if self._parsed and schema is not None:
+        if schema is SqlPlan:
+            self.sql_calls += 1
+            parsed = SqlPlan(sql=None, reason="hors ligne")
+        elif self._parsed and schema is not None:
             parsed = schema.model_validate({"answer": self._answer, "confidence": 0.75})
         return LLMResponse(
             text=self._answer,
@@ -220,7 +229,11 @@ def test_le_run_label_atteint_le_fournisseur(questions_jouet, tmp_path):
         runs_dir=tmp_path / "runs",
         label="test-run",
     )
-    assert provider.labels == ["test-run-pokedex"] * len(QUESTIONS_JOUET)
+    # Deux appels par question depuis le jalon 3 : le plan SQL, puis la réponse.
+    # Les deux doivent porter l'étiquette, sinon la moitié du coût d'un run
+    # n'est plus attribuable dans le grand livre.
+    assert provider.labels == ["test-run-pokedex"] * (2 * len(QUESTIONS_JOUET))
+    assert provider.sql_calls == len(QUESTIONS_JOUET)
 
 
 def test_une_question_en_erreur_ne_fait_pas_tomber_le_run(questions_jouet, tmp_path):
@@ -265,7 +278,9 @@ def test_le_rapport_ignore_le_cache_dans_la_latence(questions_jouet, tmp_path):
     )
     payload["results"][0]["cache_hit"] = True
     payload["results"][0]["latency_ms"] = 1
-    assert summarize(payload)["latency_p50"] == 350
+    # 700 = 2 × 350 : la latence d'une question est celle du pipeline entier,
+    # plan SQL compris. Ne compter que le second appel flatterait le chiffre.
+    assert summarize(payload)["latency_p50"] == 700
 
 
 def test_le_rapport_publie_exactitude_categories_et_calibration(questions_jouet, tmp_path):
@@ -280,3 +295,57 @@ def test_le_rapport_publie_exactitude_categories_et_calibration(questions_jouet,
     assert "Par catégorie" in markdown
     assert "Calibration" in markdown
     assert "1/2 (50,0 %)" in markdown
+
+
+# --- l'avant / après ------------------------------------------------------
+
+
+def _run(tmp_path, questions_jouet, *, answer: str, label: str) -> dict:
+    payload, _ = execute(
+        personas=["factual"],
+        questions_path=questions_jouet,
+        provider=ScriptedProvider(answer),
+        runs_dir=tmp_path / "runs",
+        label=label,
+    )
+    return payload
+
+
+def test_l_avant_apres_chiffre_l_ecart_par_categorie(questions_jouet, tmp_path):
+    avant = _run(tmp_path, questions_jouet, answer="Hastacuda.", label="avant")
+    apres = _run(tmp_path, questions_jouet, answer="Hastacuda. 150.", label="apres")
+
+    markdown = render_comparison(apres, avant, nom_avant="LLM nu", nom_apres="+ SQL")
+    assert "LLM nu" in markdown and "+ SQL" in markdown
+    # Le jeu jouet a deux questions : la seconde ne passe qu'avec « 150 ».
+    assert "1/2 (50,0 %)" in markdown
+    assert "2/2 (100,0 %)" in markdown
+    assert "+50,0 pts" in markdown
+
+
+def test_comparer_deux_jeux_de_questions_differents_est_refuse(questions_jouet, tmp_path):
+    """C'est la façon la plus simple de fabriquer une progression flatteuse.
+
+    L'empreinte voyage dans l'artefact précisément pour la rendre impossible à
+    commettre en silence.
+    """
+    avant = _run(tmp_path, questions_jouet, answer="Hastacuda.", label="avant")
+    apres = _run(tmp_path, questions_jouet, answer="Hastacuda.", label="apres")
+    apres["run"]["questions_sha256"] = "0000000000000000"
+
+    with pytest.raises(QuestionsDiverge, match="mêmes questions"):
+        render_comparison(apres, avant)
+
+
+def test_l_avant_apres_signale_un_run_servi_par_le_cache(questions_jouet, tmp_path):
+    """Un run de reprise est massivement servi par le cache : son coût et sa
+    latence ne mesurent rien, et rien n'empêcherait de coller un « 0,00000 $ »
+    dans un README. Le rapport doit le dire lui-même."""
+    avant = _run(tmp_path, questions_jouet, answer="Hastacuda.", label="avant")
+    apres = _run(tmp_path, questions_jouet, answer="Hastacuda.", label="apres")
+    for r in apres["results"]:
+        r["cache_hit"] = True
+
+    markdown = render_comparison(apres, avant, nom_apres="+ SQL")
+    assert "servi à 2/2 par le cache" in markdown
+    assert "L'exactitude, elle, est inchangée" in markdown

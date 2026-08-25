@@ -164,5 +164,19 @@
         "url": "https://pokeapi.co/api/v2/pokedex/36/"
       }
     }
+  ],
+  "names": [
+    {
+      "language": {
+        "name": "en"
+      },
+      "name": "Raichu"
+    },
+    {
+      "language": {
+        "name": "fr"
+      },
+      "name": "Raichu"
+    }
   ]
 }

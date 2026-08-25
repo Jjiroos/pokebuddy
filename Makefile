@@ -12,7 +12,7 @@ RUN ?=
 # du processus, pas dans Settings.
 DOTENV = set -a; [ -f .env ] && . ./.env; set +a;
 
-.PHONY: setup up down logs migrate revision ingest eval report test lint fmt psql clean
+.PHONY: setup up down logs migrate revision ingest ingest-tcg eval report test lint fmt psql clean
 
 setup:                       ## venv + dépendances + hooks git
 	uv sync --all-groups
@@ -31,11 +31,17 @@ logs:
 migrate:                     ## applique les migrations
 	docker compose run --rm api alembic upgrade head
 
+# Sur l'hôte, pas dans le conteneur : /app/src y est monté en lecture seule et
+# alembic doit écrire le fichier de migration. C'est aussi pour cela que .env
+# porte des URL en localhost (le conteneur reçoit les siennes via compose).
 revision:                    ## make revision M="message"
-	docker compose run --rm api alembic revision --autogenerate -m "$(M)"
+	$(DOTENV) uv run alembic revision --autogenerate -m "$(M)"
 
 ingest:                      ## make ingest [LIMIT=50]
 	docker compose run --rm api python -m src.ingest.pokeapi $(if $(LIMIT),--limit $(LIMIT),)
+
+ingest-tcg:                  ## make ingest-tcg [LIMIT=500] — cartes et illustrateurs
+	docker compose run --rm api python -m src.ingest.tcgdex $(if $(LIMIT),--limit $(LIMIT),)
 
 eval:                        ## make eval [MODEL=... PERSONA=pokedex|factual|both LIMIT=n]
 	$(DOTENV) uv run python -m eval.runner $(if $(MODEL),--model $(MODEL),) $(if $(PERSONA),--persona $(PERSONA),) $(if $(LIMIT),--limit $(LIMIT),)

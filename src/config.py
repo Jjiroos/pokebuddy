@@ -26,9 +26,16 @@ class Settings(BaseSettings):
     openai_max_retries: int = 5
 
     database_url: str = "postgresql+psycopg://pokebuddy:pokebuddy@db:5432/pokebuddy"
+    # Rôle distinct, sans aucun droit d'écriture, réservé à l'outil SQL du
+    # jalon 3. C'est la seule protection qui tienne encore si la validation du
+    # SQL généré se fait contourner — les autres couches sont des filtres, et un
+    # filtre finit toujours par se contourner. Le rôle et son mot de passe sont
+    # lus depuis cette URL, unique source de vérité (voir la migration f1a2c3).
+    database_url_ro: str = "postgresql+psycopg://pokebuddy_ro:pokebuddy_ro@db:5432/pokebuddy"
 
     llm_cache_path: Path = Field(default=Path("~/.cache/pokebuddy/llm.sqlite"))
     pokeapi_cache_dir: Path = Field(default=Path("~/.cache/pokebuddy/pokeapi"))
+    tcgdex_cache_dir: Path = Field(default=Path("~/.cache/pokebuddy/tcgdex"))
 
     @field_validator("openai_base_url", mode="before")
     @classmethod
@@ -38,7 +45,7 @@ class Settings(BaseSettings):
         # veut dire non renseignée.
         return v or None
 
-    @field_validator("llm_cache_path", "pokeapi_cache_dir")
+    @field_validator("llm_cache_path", "pokeapi_cache_dir", "tcgdex_cache_dir")
     @classmethod
     def _expand(cls, v: Path) -> Path:
         return v.expanduser()

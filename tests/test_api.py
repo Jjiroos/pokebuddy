@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.api.schemas import AnswerPayload, PokemonFacts
+from src.api.schemas import AnswerPayload, PokemonFacts, SqlPlan
+from src.tools.sql import SqlRefused
 from tests.conftest import FakeProvider
 
 ANSWER = {"answer": "Dracaufeu pèse 90,5 kg.", "confidence": 0.82}
@@ -46,18 +47,18 @@ def test_ask_renvoie_la_reponse_et_sa_consommation(make_client):
     assert body["usage"]["cache_hit"] is False
 
 
-def test_ask_ne_cite_rien_au_jalon_1(make_client):
-    """L'appel est nu : il n'y a aucune source à produire. Le champ existe
-    pour que le gain du jalon 3 se lise dans un schéma inchangé."""
+def test_ask_ne_cite_rien_quand_le_sql_ne_s_applique_pas(make_client):
+    """Sans requête exécutée, il n'y a rien à citer — et surtout rien à
+    inventer dans `sources`."""
     body = make_client(FakeProvider([ANSWER])).post("/ask", json={"question": "Poids ?"}).json()
     assert body["sources"] == []
 
 
-def test_ask_demande_bien_une_sortie_structuree(make_client):
+def test_ask_demande_un_plan_sql_puis_une_reponse(make_client):
+    """Les deux temps du pipeline, dans cet ordre."""
     provider = FakeProvider([ANSWER])
     make_client(provider).post("/ask", json={"question": "Poids ?"})
-    _messages, schema = provider.calls[0]
-    assert schema is AnswerPayload
+    assert [schema for _messages, schema in provider.calls] == [SqlPlan, AnswerPayload]
 
 
 @pytest.mark.parametrize(
@@ -67,7 +68,9 @@ def test_ask_demande_bien_une_sortie_structuree(make_client):
 def test_la_persona_change_l_invite_systeme(make_client, persona, attendu):
     provider = FakeProvider([ANSWER])
     make_client(provider).post("/ask", json={"question": "Poids ?", "persona": persona})
-    messages, _ = provider.calls[0]
+    # calls[0] génère le SQL et ne porte aucune persona : c'est le second appel,
+    # celui qui rédige, qui doit la porter.
+    messages, _ = provider.calls[-1]
     assert messages[0]["role"] == "system"
     assert attendu in messages[0]["content"]
 
@@ -75,7 +78,7 @@ def test_la_persona_change_l_invite_systeme(make_client, persona, attendu):
 def test_persona_par_defaut_pokedex(make_client):
     provider = FakeProvider([ANSWER])
     make_client(provider).post("/ask", json={"question": "Poids ?"})
-    assert "Pokédex" in provider.calls[0][0][0]["content"]
+    assert "Pokédex" in provider.calls[-1][0][0]["content"]
 
 
 def test_question_vide_rejetee(make_client):
@@ -92,7 +95,7 @@ def test_extract_valide_la_sortie(make_client):
     resp = make_client(provider).post("/extract", json={"text": "Il évolue de Reptincel."})
     assert resp.status_code == 200
     assert resp.json()["facts"] == FACTS
-    assert provider.calls[0][1] is PokemonFacts
+    assert provider.calls[0][1] is PokemonFacts  # /extract reste un seul appel
 
 
 def test_un_refus_du_modele_devient_un_422_explicite(make_client):
@@ -128,3 +131,60 @@ def test_une_cle_invalide_donne_un_message_actionnable(make_client):
     resp = client.post("/ask", json={"question": "Poids ?"})
     assert resp.status_code == 503
     assert "OPENAI_API_KEY" in resp.json()["detail"]
+
+
+# --- le chemin outillé ----------------------------------------------------
+
+
+def test_ask_execute_le_sql_et_cite_la_requete(make_client, monkeypatch):
+    """Le chemin nominal du jalon 3, sans base : `run_query` est doublé.
+
+    `sources` doit porter la requête **réellement exécutée** — celle que
+    l'outil a réécrite, LIMIT compris — et non celle proposée par le modèle.
+    """
+    executee = "SELECT name FROM pokemon WHERE speed > 130 LIMIT 200"
+    monkeypatch.setattr(
+        "src.api.routes.run_query",
+        lambda sql: ([{"name": "barraskewda"}], executee),
+    )
+    provider = FakeProvider(
+        [ANSWER], sql_plan={"sql": "SELECT name FROM pokemon WHERE speed > 130", "reason": "ok"}
+    )
+    body = make_client(provider).post("/ask", json={"question": "Eau rapides ?"}).json()
+
+    assert body["sources"] == [executee]
+    # Les lignes doivent parvenir au modèle : sans elles il répondrait de mémoire.
+    assert "barraskewda" in provider.calls[-1][0][1]["content"]
+
+
+def test_un_sql_refuse_replie_sur_la_memoire(make_client, monkeypatch):
+    """Un refus de sécurité ne doit pas devenir une erreur HTTP : la question
+    reçoit une réponse, sans source, et le gain de l'outil reste mesurable."""
+
+    def refuse(sql: str):
+        raise SqlRefused("table interdite")
+
+    monkeypatch.setattr("src.api.routes.run_query", refuse)
+    provider = FakeProvider([ANSWER], sql_plan={"sql": "SELECT * FROM secrets", "reason": "ok"})
+    resp = make_client(provider).post("/ask", json={"question": "Poids ?"})
+
+    assert resp.status_code == 200
+    assert resp.json()["sources"] == []
+
+
+def test_zero_ligne_est_annonce_au_modele(make_client, monkeypatch):
+    """Un résultat vide doit être dit, pas comblé de mémoire."""
+    monkeypatch.setattr("src.api.routes.run_query", lambda sql: ([], "SELECT 1 LIMIT 200"))
+    provider = FakeProvider([ANSWER], sql_plan={"sql": "SELECT 1", "reason": "ok"})
+    make_client(provider).post("/ask", json={"question": "Poids ?"})
+
+    contenu = provider.calls[-1][0][1]["content"]
+    assert "(0)" in contenu
+
+
+def test_la_consommation_cumule_les_deux_appels(make_client):
+    """Deux appels par question : publier le coût d'un seul serait faux."""
+    provider = FakeProvider([ANSWER])
+    body = make_client(provider).post("/ask", json={"question": "Poids ?"}).json()
+    assert body["usage"]["input_tokens"] == 240  # 120 × 2
+    assert body["usage"]["cost_usd"] == pytest.approx(0.00014)

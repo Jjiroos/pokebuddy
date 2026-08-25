@@ -24,18 +24,31 @@ from pydantic import BaseModel  # noqa: E402
 
 from src.api.deps import get_llm  # noqa: E402
 from src.api.main import create_app  # noqa: E402
+from src.api.schemas import SqlPlan  # noqa: E402
 from src.llm.provider import LLMResponse, Message  # noqa: E402
 
 
 class FakeProvider:
-    """Double du fournisseur. Aucun test du projet ne sort sur le réseau."""
+    """Double du fournisseur. Aucun test du projet ne sort sur le réseau.
+
+    Depuis le jalon 3, `/ask` appelle le modèle deux fois : d'abord pour un
+    `SqlPlan`, puis pour la réponse. `sql_plan` pilote le premier appel ; laissé
+    à None, il fait répondre « pas de SQL », ce qui replie sur le chemin nu du
+    jalon 1 — celui que la plupart de ces tests vérifient.
+    """
 
     name = "fake"
     model = "gpt-5.6-luna"
 
-    def __init__(self, payloads: list[dict] | None = None, refusal: str | None = None) -> None:
+    def __init__(
+        self,
+        payloads: list[dict] | None = None,
+        refusal: str | None = None,
+        sql_plan: dict | None = None,
+    ) -> None:
         self._payloads = payloads or []
         self._refusal = refusal
+        self._sql_plan = sql_plan or {"sql": None, "reason": "double de test"}
         self.calls: list[tuple[list[Message], type[BaseModel] | None]] = []
 
     def complete(
@@ -47,7 +60,9 @@ class FakeProvider:
     ) -> LLMResponse:
         self.calls.append(([dict(m) for m in messages], schema))
         parsed = None
-        if schema is not None and self._payloads and self._refusal is None:
+        if self._refusal is None and schema is SqlPlan:
+            parsed = SqlPlan.model_validate(self._sql_plan)
+        elif schema is not None and self._payloads and self._refusal is None:
             parsed = schema.model_validate(self._payloads.pop(0))
         return LLMResponse(
             text="texte brut",

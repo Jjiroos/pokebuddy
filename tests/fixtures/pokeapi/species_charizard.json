@@ -87,5 +87,25 @@
         "url": "https://pokeapi.co/api/v2/pokedex/36/"
       }
     }
+  ],
+  "names": [
+    {
+      "language": {
+        "name": "en"
+      },
+      "name": "Charizard"
+    },
+    {
+      "language": {
+        "name": "fr"
+      },
+      "name": "Dracaufeu"
+    },
+    {
+      "language": {
+        "name": "ja"
+      },
+      "name": "リザードン"
+    }
   ]
 }

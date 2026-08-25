@@ -24,6 +24,10 @@ class Species(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # PokéAPI est anglophone (`gyarados`) et les questions sont en français
+    # (« Léviator »). Sans cette colonne, le générateur de SQL du jalon 3 devrait
+    # traduire de mémoire — exactement ce qu'on cherche à ne plus lui demander.
+    name_fr: Mapped[str | None] = mapped_column(String(64), index=True)
     generation: Mapped[int | None] = mapped_column(Integer, index=True)
     # Auto-référence : suffit à couvrir les évolutions du jalon 1 sans table de
     # chaînes. Les évolutions ramifiées (Évoli) restent lisibles en remontant
@@ -41,6 +45,10 @@ class Type(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    # « Eau » et non « water ». Le nom français appartient à la base, pas à une
+    # invite : une table de correspondance dans le prompt serait une donnée
+    # dupliquée, non testable, et invisible à qui lit le schéma.
+    name_fr: Mapped[str | None] = mapped_column(String(32), index=True)
 
 
 class Version(Base):
@@ -120,3 +128,49 @@ class PokemonGameAppearance(Base):
     version_id: Mapped[int] = mapped_column(
         ForeignKey("versions.id", ondelete="CASCADE"), primary_key=True
     )
+
+
+class CardSet(Base):
+    """Une extension du JCC — « Set de Base », « Voltage Éclatant »…
+
+    Les identifiants sont ceux de TCGdex (`base1`, `swsh4`) : garder la clé de
+    la source rend chaque ligne revérifiable en une requête HTTP, ce qui est
+    exactement ce que la vérité terrain de l'évaluation demande.
+    """
+
+    __tablename__ = "card_sets"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name_en: Mapped[str] = mapped_column(String(128), index=True)
+    name_fr: Mapped[str | None] = mapped_column(String(128), index=True)
+    serie: Mapped[str | None] = mapped_column(String(128), index=True)
+    # Chaîne ISO plutôt que Date : TCGdex sert parfois des dates partielles, et
+    # l'ordre lexicographique d'une date ISO est déjà l'ordre chronologique.
+    release_date: Mapped[str | None] = mapped_column(String(16))
+    card_count: Mapped[int | None] = mapped_column(Integer)
+
+    cards: Mapped[list[Card]] = relationship(back_populates="card_set")
+
+
+class Card(Base):
+    """Une carte. `illustrator` est la colonne qui justifie cette table.
+
+    L'évaluation du jalon 2 y consacre dix questions, et le modèle nu y plafonne
+    à 20 % : c'est la connaissance la plus absente de sa mémoire, donc celle qui
+    se gagne le plus en allant la chercher en base.
+    """
+
+    __tablename__ = "cards"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    set_id: Mapped[str] = mapped_column(ForeignKey("card_sets.id", ondelete="CASCADE"), index=True)
+    # Chaîne, pas entier : TCGdex numérote certaines cartes « ! » ou « ? »
+    # (`exu-!` existe). Un Integer ferait tomber l'ingestion sur ces lignes.
+    local_id: Mapped[str] = mapped_column(String(16), index=True)
+    name_en: Mapped[str] = mapped_column(String(128), index=True)
+    name_fr: Mapped[str | None] = mapped_column(String(128), index=True)
+    illustrator: Mapped[str | None] = mapped_column(String(128), index=True)
+    rarity: Mapped[str | None] = mapped_column(String(64))
+    category: Mapped[str | None] = mapped_column(String(32))
+
+    card_set: Mapped[CardSet] = relationship(back_populates="cards")

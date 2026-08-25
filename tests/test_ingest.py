@@ -82,7 +82,16 @@ def test_liste_paginee_vers_lignes():
 
 
 def test_espece(species_charizard):
-    assert species_row(species_charizard) == {"id": 6, "name": "charizard", "generation": 1}
+    """`name_fr` vient du même payload que le reste : aucun appel de plus.
+
+    C'est ce qui permet au générateur de SQL du jalon 3 de filtrer sur
+    « Dracaufeu » sans traduire de mémoire."""
+    assert species_row(species_charizard) == {
+        "id": 6,
+        "name": "charizard",
+        "name_fr": "Dracaufeu",
+        "generation": 1,
+    }
 
 
 def test_parent_d_evolution(species_raichu, species_charizard):

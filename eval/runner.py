@@ -96,6 +96,7 @@ def _failure(question: dict[str, Any], persona: str, cause: str) -> dict[str, An
         "expected": question["expected"],
         "answer": "",
         "confidence": None,
+        "sources": [],
         "ok": False,
         "detail": cause,
         "error": cause,
@@ -134,6 +135,11 @@ async def _ask_one(
         "expected": question["expected"],
         "answer": body["answer"],
         "confidence": body["confidence"],
+        # La requête réellement exécutée, ou une liste vide si la question a
+        # replié sur la mémoire. C'est la seule trace qui dise *combien* de
+        # questions l'outil a réellement traitées — sans elle, un gain
+        # d'exactitude ne se distingue pas d'un coup de chance du modèle.
+        "sources": body["sources"],
         "ok": verdict.ok,
         "detail": verdict.detail,
         "error": None,

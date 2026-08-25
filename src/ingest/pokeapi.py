@@ -12,12 +12,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
 from sqlalchemy import func, select, update
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from src.config import get_settings
@@ -31,6 +30,7 @@ from src.db.models import (
 )
 from src.db.session import get_sessionmaker
 from src.ingest.http_cache import CachedHTTP
+from src.ingest.write import chunks, upsert
 
 BASE_URL = "https://pokeapi.co/api/v2"
 
@@ -62,10 +62,23 @@ def parse_generation(name: str | None) -> int | None:
     return total or None
 
 
+def localized_name(payload: dict[str, Any], language: str) -> str | None:
+    """Nom localisé, depuis `names` du payload — déjà présent dans le cache.
+
+    Aucun appel réseau supplémentaire : la ressource est la même que celle qui
+    portait déjà les statistiques.
+    """
+    for entry in payload.get("names") or []:
+        if (entry.get("language") or {}).get("name") == language:
+            return entry.get("name")
+    return None
+
+
 def species_row(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": payload["id"],
         "name": payload["name"],
+        "name_fr": localized_name(payload, "fr"),
         "generation": parse_generation((payload.get("generation") or {}).get("name")),
     }
 
@@ -136,21 +149,21 @@ def named_resource_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"id": id_from_url(r["url"]), "name": r["name"]} for r in payload["results"]]
 
 
+def type_row(payload: dict[str, Any]) -> dict[str, Any]:
+    """Un type, avec son nom français.
+
+    Vingt-et-une ressources à récupérer une à une plutôt que la liste paginée :
+    `names` n'existe que sur la ressource détaillée, et sans lui une question
+    posée en français ne peut pas filtrer sur un type.
+    """
+    return {
+        "id": payload["id"],
+        "name": payload["name"],
+        "name_fr": localized_name(payload, "fr"),
+    }
+
+
 # --- écriture -------------------------------------------------------------
-
-
-def upsert(session: Session, model: Any, rows: Sequence[dict[str, Any]], *, keys: list[str]) -> int:
-    if not rows:
-        return 0
-    stmt = insert(model).values(list(rows))
-    updatable = {c: stmt.excluded[c] for c in rows[0] if c not in keys}
-    stmt = (
-        stmt.on_conflict_do_update(index_elements=keys, set_=updatable)
-        if updatable
-        else stmt.on_conflict_do_nothing(index_elements=keys)
-    )
-    session.execute(stmt)
-    return len(rows)
 
 
 def parent_updates(
@@ -174,11 +187,6 @@ def parent_updates(
     return liens, orphelins
 
 
-def _chunks(rows: list[dict[str, Any]], size: int = 500) -> Iterable[list[dict[str, Any]]]:
-    for i in range(0, len(rows), size):
-        yield rows[i : i + size]
-
-
 # --- orchestration --------------------------------------------------------
 
 
@@ -196,13 +204,20 @@ async def fetch_everything(http: CachedHTTP, *, limit: int | None) -> dict[str, 
     species_urls = {p["species"]["url"] for p in pokemon}
     species = await asyncio.gather(*(http.get_json(u) for u in sorted(species_urls)))
 
-    return {"types": types, "versions": versions, "pokemon": pokemon, "species": species}
+    type_details = await asyncio.gather(*(http.get_json(t["url"]) for t in types["results"]))
+
+    return {
+        "types": type_details,
+        "versions": versions,
+        "pokemon": pokemon,
+        "species": species,
+    }
 
 
 def load(session: Session, data: dict[str, Any]) -> dict[str, int]:
     counts: dict[str, int] = {}
 
-    counts["types"] = upsert(session, Type, named_resource_rows(data["types"]), keys=["id"])
+    counts["types"] = upsert(session, Type, [type_row(t) for t in data["types"]], keys=["id"])
     counts["versions"] = upsert(
         session, Version, named_resource_rows(data["versions"]), keys=["id"]
     )
@@ -211,7 +226,7 @@ def load(session: Session, data: dict[str, Any]) -> dict[str, int]:
     # peut pointer que vers une ligne déjà insérée.
     species_payloads = data["species"]
     counts["species"] = 0
-    for chunk in _chunks([species_row(s) for s in species_payloads]):
+    for chunk in chunks([species_row(s) for s in species_payloads]):
         counts["species"] += upsert(session, Species, chunk, keys=["id"])
     session.flush()
 
@@ -243,13 +258,13 @@ def load(session: Session, data: dict[str, Any]) -> dict[str, int]:
         for p in data["pokemon"]
     ]
     counts["pokemon"] = 0
-    for chunk in _chunks(pokemon_rows):
+    for chunk in chunks(pokemon_rows):
         counts["pokemon"] += upsert(session, Pokemon, chunk, keys=["id"])
     session.flush()
 
     type_rows = [r for p in data["pokemon"] for r in pokemon_type_rows(p)]
     counts["pokemon_types"] = 0
-    for chunk in _chunks(type_rows):
+    for chunk in chunks(type_rows):
         counts["pokemon_types"] += upsert(
             session, PokemonType, chunk, keys=["pokemon_id", "type_id"]
         )
@@ -258,7 +273,7 @@ def load(session: Session, data: dict[str, Any]) -> dict[str, int]:
     # `game_indices` peut répéter une version pour une même forme.
     unique = list({(r["pokemon_id"], r["version_id"]): r for r in appearances}.values())
     counts["appearances"] = 0
-    for chunk in _chunks(unique):
+    for chunk in chunks(unique):
         counts["appearances"] += upsert(
             session, PokemonGameAppearance, chunk, keys=["pokemon_id", "version_id"]
         )

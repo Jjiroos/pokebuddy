@@ -16,6 +16,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "alembic>=1.14",
     "pyyaml>=6.0",
+    "sqlglot>=30.17.0",
 ]
 
 [dependency-groups]

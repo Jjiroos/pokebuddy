@@ -31,6 +31,12 @@ services:
       # système de fichiers de l'hôte, et survivant aux rebuilds.
       LLM_CACHE_PATH: /cache/llm.sqlite
       POKEAPI_CACHE_DIR: /cache/pokeapi
+      TCGDEX_CACHE_DIR: /cache/tcgdex
+      # `environment` prime sur `env_file`. Dans le réseau compose la base est
+      # `db:5432` ; dans .env elle est en localhost, pour l'éval et les scripts
+      # qui tournent sur l'hôte. Chacun sa vue, une seule vérité par contexte.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-pokebuddy}:${POSTGRES_PASSWORD:-pokebuddy}@db:5432/${POSTGRES_DB:-pokebuddy}
+      DATABASE_URL_RO: postgresql+psycopg://pokebuddy_ro:${POSTGRES_RO_PASSWORD:-pokebuddy_ro}@db:5432/${POSTGRES_DB:-pokebuddy}
     depends_on:
       db:
         condition: service_healthy

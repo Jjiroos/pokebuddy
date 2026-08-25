@@ -37,6 +37,18 @@ class AnswerPayload(_Strict):
     confidence: float
 
 
+class SqlPlan(_Strict):
+    """Ce que le modèle propose d'exécuter, avant toute validation.
+
+    `sql = None` est une réponse légitime et attendue : elle dit « cette
+    question ne se répond pas depuis ces tables ». La forcer à produire du SQL
+    coûte que coûte fabriquerait des requêtes plausibles et fausses.
+    """
+
+    sql: str | None
+    reason: str
+
+
 class BaseStats(_Strict):
     hp: int | None
     attack: int | None
