@@ -8,9 +8,9 @@ répondant de mémoire.
 outillé bat un LLM nu sur des faits vérifiables.** Le dépôt est construit autour
 de cette mesure, et l'historique des runs d'évaluation en est le livrable.
 
-> **État : jalon 2 sur 5 terminé.** La ligne de base est mesurée : **53,8 %**
-> d'exactitude sur 40 questions vérifiables, sans aucun outil. C'est le chiffre
-> que les jalons suivants doivent battre.
+> **État : jalon 3 sur 5 terminé.** Le LLM nu répondait juste à **53,8 %** des
+> questions. Avec un outil SQL contraint, il monte à **92,5 %** — sur les mêmes
+> 40 questions, écrites avant d'avoir vu le système échouer.
 
 ---
 
@@ -28,53 +28,83 @@ les écrire après aurait permis de choisir celles qu'on sait déjà cassées.
 Notation par grader déterministe, sans juge LLM — un juge est un second modèle,
 dont l'erreur devrait elle-même être mesurée.
 
-| Configuration | Exactitude | Latence p50 / p95 | Coût / requête |
+| Catégorie | LLM nu | + SQL | Écart |
 |---|---|---|---|
-| LLM nu, sans outil | **53,8 %** — 43/80 | 2,0 s / 16,9 s | 0,00011 $ |
-| + SQL et RAG | *jalon 3* | | |
-| Agent complet | *jalon 4* | | |
+| Factuel — stats, types, évolutions | 27/30 (90,0 %) | 28/30 (93,3 %) | +3,3 pts |
+| Agrégation — comptages, filtres, tris | 10/20 (50,0 %) | 18/20 (90,0 %) | **+40,0 pts** |
+| Illustrateurs — cartes JCC | 4/20 (20,0 %) | 20/20 (100,0 %) | **+80,0 pts** |
+| Pièges — formes régionales, génération 9 | 2/10 (20,0 %) | 8/10 (80,0 %) | **+60,0 pts** |
+| **Ensemble** | **43/80 (53,8 %)** | **74/80 (92,5 %)** | **+38,8 pts** |
 
-### Où le modèle se casse
-
-| Catégorie | Exactitude | Ce que ça dit |
+| Mesure | LLM nu | + SQL |
 |---|---|---|
-| Factuel — stats, types, évolutions | 27/30 — **90,0 %** | la mémoire du modèle couvre bien les faits de base |
-| Agrégation — comptages, filtres, tris | 10/20 — **50,0 %** | il ne sait pas parcourir un ensemble. Cible directe de l'outil SQL du jalon 3 |
-| Illustrateurs — cartes JCC | 4/20 — **20,0 %** | connaissance absente de sa mémoire. Cible du RAG |
-| Pièges — formes régionales, génération 9 | 2/10 — **20,0 %** | là où la mémoire n'est pas absente mais **fausse** |
+| Coût pour 80 questions | 0,0088 $ | 0,0180 $ |
+| Latence médiane | 2,0 s | 5,7 s |
+| Appels au modèle par question | 1 | 2 |
 
-L'écart entre les personas est négligeable : 52,5 % pour `pokedex`, 55,0 % pour
-`factual`. La mise en scène ne dégrade pas l'exactitude à ce jalon.
+L'écart entre personas est nul : 92,5 % des deux côtés. La mise en scène du
+Pokédex ne dégrade pas l'exactitude.
 
-### Le modèle ne sait pas qu'il ne sait pas
+**Le pipeline coûte deux fois plus cher et répond trois fois moins vite.** C'est
+le prix de l'outil, et il est écrit ici plutôt que tu : deux appels au modèle par
+question, et un schéma de ~700 tokens envoyé à chaque génération de requête.
 
-Chaque réponse porte une auto-évaluation de confiance, demandée par le schéma
-depuis le jalon 1.
+### Ce que le chiffre cache
 
-| Le modèle a… | Confiance moyenne qu'il s'attribue |
-|---|---|
-| répondu juste | 0,96 |
-| répondu faux | 0,73 |
+L'exactitude globale mélange deux régimes très différents :
 
-L'écart existe, mais il est trop faible pour servir de garde-fou. Le cas le plus
-net : interrogé sur les types d'**Axoloto de Paldea** (Poison/Sol), le modèle
-répond « Eau » — la forme de Kanto — avec une confiance de **0,97**. Une réponse
-fausse et sûre d'elle est pire qu'un aveu d'ignorance, et c'est précisément ce
-qui justifie d'aller chercher les faits ailleurs qu'en mémoire.
+| | Questions | Justes |
+|---|---|---|
+| L'outil SQL a produit une requête exécutée | 74/80 | **72 — 97,3 %** |
+| Repli sur la réponse de mémoire | 6/80 | 2 — 33,3 % |
+
+**Quand l'outil part, il se trompe presque jamais.** Tout ce qui reste à gagner
+est dans les six questions où la requête n'a pas abouti. Les trois défauts
+résiduels sont identifiés, et aucun n'est un problème de SQL :
+
+1. **L'échappement d'apostrophe.** Sur « L'appel des Légendes », le modèle écrit
+   `'L\'appel des Légendes'` — la convention MySQL. PostgreSQL veut `''`. La
+   requête ne renvoie rien, le pipeline replie sur la mémoire, et le modèle
+   répond « Mitsuhiro Arita » là où la base dit « sui ». Une note de dialecte
+   dans le prompt corrigerait ce cas ; elle attend le jalon 4, où un run complet
+   est de toute façon prévu.
+2. **Une jointure contradictoire** sur l'évolution de Nymphali, où le modèle
+   filtre aussi `species.name = 'nymphali'` alors que cette colonne contient
+   l'identifiant anglais `sylveon`.
+3. **Une agrégation** où la requête proposée a été rejetée et où la réponse de
+   mémoire invente une vitesse de 145 pour Hastacuda, qui en a 136.
+
+### Le modèle sait mieux qu'avant qu'il ne sait pas
+
+| Le modèle a… | LLM nu | + SQL |
+|---|---|---|
+| répondu juste | 0,96 | 0,99 |
+| répondu faux | 0,73 | **0,58** |
+
+L'écart de calibration passe de 0,23 à 0,41. Ce n'est pas un effet secondaire :
+quand la base ne renvoie rien, l'invite demande explicitement de le dire plutôt
+que de combler. La question sur Nymphali est perdue avec une confiance de **0,10**
+— le modèle avoue. Sur la ligne de base, il se trompait sur Axoloto de Paldea à
+**0,97**.
 
 ### Reproductibilité
 
 La famille GPT-5 refuse `temperature=0` ; la garantie repose donc sur le cache
-disque. Deux runs consécutifs le vérifient : **78 des 80 appels rejoués au mot
-près, à coût nul** (0,0086 $ puis 0,0002 $). Les deux divergences sont les deux
-appels que le premier run avait perdus sur un plafond de débit du palier gratuit
-— les échecs ne sont délibérément pas mis en cache, donc ils sont rejoués.
+disque. Chaque série le vérifie : rejouée, elle rend les mêmes réponses au mot
+près, à coût quasi nul.
 
-Le run publié ci-dessus est le second, complet et sans erreur. Latence et coût
-proviennent du premier, seul à avoir réellement appelé le fournisseur. Les deux
-artefacts sont dans `eval/runs/` : ce sont les pièces justificatives du tableau.
-La latence p95 est gonflée par les temporisations du palier gratuit, pas par le
-modèle — le p50 est plus représentatif.
+Le palier gratuit de Groq plafonne à 8 000 tokens/minute, et le premier run du
+jalon 3 a perdu **20 questions sur 80** en `429`. Elles sont comptées fausses —
+un échec est un résultat, jamais une exception. Comme les échecs ne sont
+délibérément **pas** mis en cache, rejouer ne repaie que les questions perdues :
+57/80 puis 71/80 puis 74/80, pour 0,0143 $ puis 0,0031 $ puis 0,0006 $.
+
+`eval/runs/` contient le premier run de chaque série — celui qui a réellement
+appelé le fournisseur, et d'où viennent coût et latence — et le run de référence
+sans erreur, d'où vient l'exactitude. `python -m eval.report <neuf>.json --contre
+<ancien>.json` refuse de comparer deux runs dont l'empreinte de questions
+diffère, et signale de lui-même un run trop servi par le cache pour que son coût
+veuille dire quelque chose.
 
 ---
 
@@ -100,14 +130,31 @@ modèle — le p50 est plus représentatif.
                     └─────────────┘
 ```
 
-**Ce qui existe au jalon 1** : l'API, la couche LLM instrumentée, la base de
-faits. Le routeur et les trois outils sont vides — `/ask` appelle le modèle
-directement et ne cite rien.
+**Ce qui existe au jalon 3** : l'API, la couche LLM instrumentée, la base de
+faits, les ~23 500 cartes du JCC, et **l'outil SQL**. Le routeur, le RAG et le
+calcul restent vides.
+
+Pas encore de routeur, donc : `/ask` est un pipeline en deux temps.
+
+```
+   question ──▶ ① le modèle écrit une requête    (ou répond « pas de SQL »)
+                        │
+                        ▼
+                  validation + exécution         (lecture seule, LIMIT forcé)
+                        │
+                        ▼
+   réponse ◀── ② le modèle rédige depuis les lignes  + la requête en source
+```
+
+Quand le premier temps renonce, ou que la requête est refusée, on **replie sur
+la réponse de mémoire** — le chemin du jalon 1. Ce repli n'est pas une facilité :
+refuser de répondre hors périmètre ferait chuter les catégories que le SQL ne
+couvre pas, et le tableau mesurerait alors le refus autant que le gain.
 
 **La décision structurante** : les questions d'agrégation (« quels Pokémon Eau
-dépassent 100 en vitesse ? ») partiront en SQL, pas en RAG. Un index vectoriel
-est mauvais en comptage et en filtrage numérique. Le lore partira en RAG.
-L'arbitrage du routeur est le travail d'ingénierie du projet.
+dépassent 100 en vitesse ? ») partent en SQL, pas en RAG. Un index vectoriel est
+mauvais en comptage et en filtrage numérique. Le lore partira en RAG au jalon 4 —
+mais seulement une fois que des questions de lore existeront pour le mesurer.
 
 ---
 
@@ -139,6 +186,7 @@ make setup                   # venv, dépendances, hooks git
 make up                      # PostgreSQL + pgvector, API
 make migrate                 # crée le schéma
 make ingest                  # ~1350 pokémon, une vingtaine de secondes
+make ingest-tcg              # ~23 500 cartes du JCC et leurs illustrateurs
 make test                    # doit passer sans réseau
 ```
 
@@ -160,8 +208,10 @@ Documentation interactive sur <http://localhost:8000/docs>.
 |---|---|
 | `make up` / `make down` | démarre / arrête la pile |
 | `make ingest LIMIT=50` | ingestion partielle, pour itérer vite |
+| `make ingest-tcg` | cartes et illustrateurs, depuis TCGdex |
 | `make eval` | rejoue les 40 questions d'évaluation |
 | `make report RUN=eval/runs/<fichier>.json` | régénère le tableau d'un run passé |
+| `python -m eval.report <neuf>.json --contre <ancien>.json` | tableau avant/après |
 | `make psql` | console SQL sur la base |
 | `make lint` / `make fmt` | ruff |
 | `make clean` | repart de zéro, données comprises |
@@ -184,6 +234,7 @@ est ignoré par git depuis un commit antérieur à l'écriture de toute clé.
 | `make ingest` semble lent au premier lancement | normal : le cache PokéAPI se remplit. Les réingestions suivantes sont instantanées |
 | le rechargement à chaud d'uvicorn ne réagit pas | inotify ne traverse pas certains montages (réseau, WSL). `WATCHFILES_FORCE_POLLING=true` est déjà posé sur le service `api` |
 | un `uv run` nu recrée un venv lent dans le dépôt | passer par `make`, qui pose `UV_PROJECT_ENVIRONMENT` hors du dépôt. Aucun fichier de configuration `uv` ne permet de le fixer |
+| `permission denied for table …` dans les journaux | le rôle en lecture seule n'existe pas encore : `make migrate` |
 | `make test` échoue sur la base | les tests ne touchent pas PostgreSQL. Si un test réseau apparaît, c'est un bug : aucun test du dépôt ne doit sortir |
 
 ---
@@ -239,6 +290,53 @@ modélisées nativement par le couple `pokemon` / `species` : Raichu d'Alola est
 une ligne distincte, rattachée à l'espèce Raichu, partageant son numéro de
 Pokédex, avec ses propres types.
 
+### Laisser un modèle écrire du SQL, sans lui laisser casser la base
+
+Quatre couches, et **elles ne se valent pas** — c'est le point qui compte :
+
+| Couche | Ce qu'elle arrête |
+|---|---|
+| **Rôle PostgreSQL en lecture seule** | tout ce qui écrit, même si le reste a échoué |
+| Validation d'AST (`sqlglot`) | instruction multiple, écriture, table hors liste blanche |
+| `LIMIT` forcé par réécriture d'arbre | les résultats qui saturent la fenêtre de contexte |
+| `statement_timeout` | les jointures cartésiennes |
+
+Les trois dernières sont des **filtres**, et un filtre finit par se contourner.
+Seule la première est une propriété du serveur : `DROP TABLE cards` échoue faute
+de droits, quelle que soit l'ingéniosité de la requête. Un projet qui n'aurait
+que le parseur aurait compris le problème à moitié.
+
+Le contournement le plus élégant est la **CTE écrivante** :
+
+```sql
+WITH x AS (INSERT INTO types VALUES (1, 'a') RETURNING *) SELECT * FROM x
+```
+
+L'expression racine est un `SELECT`. Un validateur qui n'inspecterait que le
+premier nœud la laisserait passer — d'où le parcours de l'arbre entier.
+`tests/test_sql_tool.py` porte un test par contournement, nommé d'après lui.
+
+La liste blanche des tables est **dérivée de `Base.metadata`**, jamais écrite à
+la main : une table ajoutée plus tard ne peut pas être oubliée, et
+`pg_catalog` comme `information_schema` tombent sans avoir à être nommés. Le
+schéma envoyé au modèle vient de la même source, pour qu'il ne puisse pas
+décrire une base qui n'existe plus.
+
+### Les noms français appartiennent à la base, pas à l'invite
+
+PokéAPI est anglophone : `gyarados`, `water`. Les questions sont françaises :
+« Léviator », « Eau ». La tentation est de mettre la correspondance dans le
+prompt ; elle a été mise en base — `species.name_fr`, `types.name_fr`,
+`card_sets.name_fr` — parce qu'une table de correspondance dans une invite est
+une donnée dupliquée, non testable, et invisible à qui lit le schéma.
+
+Les deux premières versions de l'outil s'y sont cassé les dents de façon
+instructive : le modèle écrivait `t.name = 'Water'` puis `p.name =
+'axoloto-paldea'`, deux valeurs qui n'existent pas. La première a été corrigée
+en ingérant les noms de types français ; la seconde en écrivant dans les notes
+du schéma que le préfixe d'une forme régionale est l'identifiant **anglais** de
+l'espèce.
+
 ### Le cache d'ingestion est une obligation, pas une optimisation
 
 La politique d'usage de PokéAPI n'impose aucune limite de débit mais **exige** le
@@ -282,8 +380,8 @@ sont des propriétés de la source, pas de l'ingestion — à garder en tête en
 |---|---|---|
 | 1 | Socle : API, couche LLM instrumentée, base de faits | **terminé** |
 | 2 | 40 questions d'évaluation, harnais, ligne de base chiffrée | **terminé** |
-| 3 | Outil SQL contraint, RAG avec citations obligatoires | à venir |
-| 4 | Agent LangGraph, cas dégradés, traces Langfuse | |
+| 3 | Outil SQL contraint, cartes du JCC, citations obligatoires | **terminé** |
+| 4 | Agent LangGraph, RAG sur le lore, cas dégradés, traces Langfuse | à venir |
 | 5 | CI, image publiée, front React, comparatif multi-fournisseurs | |
 
 ---
@@ -293,13 +391,19 @@ sont des propriétés de la source, pas de l'ingestion — à garder en tête en
 | Source | Usage | Licence |
 |---|---|---|
 | [PokéAPI](https://pokeapi.co) | stats, espèces, types, évolutions, jeux | données libres ; politique d'usage imposant le cache local |
-| [TCGdex](https://tcgdex.net) | illustrateurs des cartes — vérité terrain de l'évaluation | données communautaires ouvertes, usage non commercial |
+| [TCGdex](https://tcgdex.net) | ~23 500 cartes, leurs extensions et leurs illustrateurs | données communautaires ouvertes, usage non commercial |
 | [Bulbapedia](https://bulbapedia.bulbagarden.net) | lore et contexte *(jalon 3)* | CC BY-NC-SA — attribution obligatoire |
 
 Le plan initial visait [pokemontcg.io](https://pokemontcg.io) ; son point d'entrée
 `/v2/cards` renvoyait `502` au moment du jalon 2. TCGdex répond sans clé et expose
 directement le champ `illustrator` — chaque question illustrateur porte l'identifiant
 de carte qui permet de la revérifier en une commande.
+
+L'ingestion utilise l'**API GraphQL** de TCGdex, qui sert `illustrator` en lot :
+une vingtaine de requêtes pour ~23 500 cartes, contre autant de requêtes REST que
+de cartes. Les noms français des extensions et des cartes viennent du REST
+localisé, une requête par extension. Tout est mis en cache sur disque : la
+courtoisie minimale envers une API communautaire gratuite.
 
 **Pokémon est une marque de Nintendo / Creatures / GAME FREAK.** Ce projet est
 un travail personnel non commercial, sans affiliation. Aucune image de carte ni
