@@ -15,8 +15,11 @@ import openai
 import pytest
 
 from src.api.schemas import AnswerPayload
+from src.config import Settings
 from src.llm.cache import LLMCache
 from src.llm.openai_provider import OpenAIProvider
+
+GROQ = "https://api.groq.com/openai/v1"
 
 
 def _response_payload(text: str, *, model: str) -> dict:
@@ -53,6 +56,7 @@ class Recorder:
 
     def __init__(self, *, text: str = '{"answer": "ok", "confidence": 0.5}', model: str) -> None:
         self.requests: list[dict] = []
+        self.urls: list[str] = []
         self._text = text
         self._model = model
         self.status = 200
@@ -60,6 +64,7 @@ class Recorder:
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(json.loads(request.content))
+        self.urls.append(str(request.url))
         if self.fail_times > 0:
             self.fail_times -= 1
             return httpx.Response(429, json={"error": {"message": "slow down"}})
@@ -118,6 +123,49 @@ def test_la_verbosite_n_est_pas_envoyee_avec_un_schema(tmp_cache_path):
     provider.complete([{"role": "user", "content": "autre"}], schema=AnswerPayload)
     assert rec.requests[1]["text"].get("verbosity") is None
     assert rec.requests[1]["text"]["format"]["type"] == "json_schema"
+
+
+# --- passerelle compatible OpenAI ----------------------------------------
+
+
+def test_un_modele_prefixe_par_l_editeur_garde_les_controles_de_raisonnement(tmp_cache_path):
+    """Groq sert la famille gpt-oss sous « openai/gpt-oss-120b ».
+
+    Sans découpage du préfixe éditeur, le modèle retomberait sur `temperature` —
+    qu'il accepte, donc sans erreur : la bascule serait invisible, et le chiffre
+    du jalon 2 aurait été mesuré avec d'autres réglages que ceux annoncés.
+    """
+    rec = Recorder(model="openai/gpt-oss-120b")
+    build("openai/gpt-oss-120b", tmp_cache_path, rec, base_url=GROQ).complete(MESSAGES)
+
+    sent = rec.requests[0]
+    assert sent["reasoning"] == {"effort": "low"}
+    assert "temperature" not in sent
+
+
+def test_base_url_deroute_les_requetes_et_renomme_le_fournisseur(tmp_cache_path):
+    rec = Recorder(model="openai/gpt-oss-120b")
+    provider = build("openai/gpt-oss-120b", tmp_cache_path, rec, base_url=GROQ)
+    provider.complete(MESSAGES)
+
+    # `name` part dans /health : il doit dire où les requêtes vont vraiment.
+    assert provider.name == "api.groq.com"
+    assert rec.urls[0] == f"{GROQ}/responses"
+
+
+def test_deux_endpoints_ne_partagent_pas_le_cache(tmp_cache_path):
+    """Le même nom de modèle servi ailleurs n'est pas le même modèle."""
+    rec = Recorder(model="openai/gpt-oss-120b")
+    build("openai/gpt-oss-120b", tmp_cache_path, rec, base_url=GROQ).complete(MESSAGES)
+    build("openai/gpt-oss-120b", tmp_cache_path, rec).complete(MESSAGES)
+
+    assert len(rec.requests) == 2
+
+
+def test_une_base_url_vide_vaut_non_renseignee():
+    """`OPENAI_BASE_URL=` dans .env arrive comme chaîne vide ; le SDK OpenAI
+    ne l'accepte pas comme valeur par défaut."""
+    assert Settings(openai_base_url="").openai_base_url is None
 
 
 # --- cache et coût --------------------------------------------------------

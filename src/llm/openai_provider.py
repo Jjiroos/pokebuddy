@@ -10,6 +10,10 @@ Deux particularités de l'API valent d'être lues avant de toucher ce fichier :
 2. **Les refus ne sont pas des exceptions** : ils arrivent comme un item de
    contenu de type ``refusal``. Les ignorer donnerait une réponse vide et
    silencieuse ; on les remonte explicitement.
+3. **« Compatible OpenAI » ne veut pas dire compatible ici.** Ce fichier parle
+   l'API Responses ; la plupart des passerelles ne servent que
+   ``/chat/completions``. ``base_url`` n'a donc de sens que pour celles qui
+   exposent ``/responses`` — Groq aujourd'hui.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ import os
 import time
 from collections.abc import Sequence
 from typing import Any
+from urllib.parse import urlparse
 
 import openai
 from openai import OpenAI
@@ -35,7 +40,7 @@ from src.llm.provider import LLMResponse, Message
 
 # Familles de modèles qui pilotent la génération par l'effort de raisonnement
 # plutôt que par l'échantillonnage.
-_REASONING_FAMILIES = ("gpt-5", "o1", "o3", "o4")
+_REASONING_FAMILIES = ("gpt-5", "gpt-oss", "o1", "o3", "o4")
 
 # Erreurs qui méritent une nouvelle tentative : surcharge, coupure réseau, 5xx.
 # Un 400 ou un 401 sont des bugs de notre côté, on ne les rejoue pas.
@@ -48,17 +53,32 @@ _RETRYABLE = (
 
 
 def uses_reasoning_controls(model: str) -> bool:
-    return model.startswith(_REASONING_FAMILIES)
+    # Les passerelles préfixent par l'éditeur — Groq sert « openai/gpt-oss-120b ».
+    # Sans ce découpage, le modèle retomberait sur `temperature`, que la famille
+    # gpt-oss accepte : la bascule serait silencieuse, donc invisible au tableau.
+    return model.rsplit("/", 1)[-1].startswith(_REASONING_FAMILIES)
+
+
+def _endpoint_name(base_url: str | None) -> str:
+    """Nom du fournisseur réellement interrogé.
+
+    Il part dans `/health`, dans la clé de cache et dans le grand livre.
+    Annoncer « openai » pendant que les requêtes filent chez Groq rendrait la
+    sonde de santé fausse, et laisserait deux endpoints servant le même nom de
+    modèle se répondre l'un l'autre depuis le cache.
+    """
+    if not base_url:
+        return "openai"
+    return urlparse(base_url).hostname or base_url
 
 
 class OpenAIProvider:
-    name = "openai"
-
     def __init__(
         self,
         *,
         model: str,
         cache: LLMCache,
+        base_url: str | None = None,
         reasoning_effort: str = "low",
         verbosity: str = "low",
         timeout_s: float = 60.0,
@@ -76,9 +96,14 @@ class OpenAIProvider:
         # http_client injectable : les tests branchent un transport factice pour
         # vérifier ce qui part réellement sur le fil, sans clé ni réseau.
         self._client = OpenAI(
-            api_key=api_key, timeout=timeout_s, max_retries=0, http_client=http_client
+            api_key=api_key,
+            base_url=base_url,
+            timeout=timeout_s,
+            max_retries=0,
+            http_client=http_client,
         )
 
+        self.name = _endpoint_name(base_url)
         self.model = model
         self._cache = cache
         self._reasoning_effort = reasoning_effort

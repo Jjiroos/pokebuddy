@@ -36,9 +36,12 @@ from src.llm.provider import LLMProvider, LLMResponse, Message
 QUESTIONS_PATH = Path(__file__).parent / "questions.yaml"
 RUNS_DIR = Path(__file__).parent / "runs"
 
-# Le cache SQLite sérialise ses écritures et l'API distante n'aime pas les
-# rafales : quatre requêtes en vol suffisent à rendre un run de 80 appels court.
-CONCURRENCY = 4
+# Le cache SQLite sérialise ses écritures, et les paliers gratuits plafonnent en
+# tokens par minute autant qu'en requêtes : celui de Groq autorise 30 req/min
+# mais 8 000 tokens/min, soit une dizaine d'appels. Le provider rejoue les 429,
+# mais un run qui passe son temps en backoff ne mesure plus la latence — deux
+# requêtes en vol tiennent sous les deux plafonds.
+CONCURRENCY = 2
 REQUEST_TIMEOUT_S = 180.0
 
 
@@ -196,11 +199,19 @@ async def run(
     return payload
 
 
+def _slug(label: str) -> str:
+    """Le nom de modèle d'une passerelle porte un « / » — `openai/gpt-oss-120b`.
+    Tel quel dans un nom de fichier, il viserait un sous-dossier inexistant.
+    L'étiquette d'origine reste intacte dans l'artefact et dans le grand livre.
+    """
+    return label.replace("/", "-")
+
+
 def save(payload: dict[str, Any], runs_dir: Path = RUNS_DIR) -> Path:
     """Écrit l'artefact. Sync et hors de `run()` : écrire sur disque depuis une
     coroutine bloquerait la boucle, et ruff a raison de le refuser."""
     runs_dir.mkdir(parents=True, exist_ok=True)
-    out = runs_dir / f"{payload['run']['label']}.json"
+    out = runs_dir / f"{_slug(payload['run']['label'])}.json"
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return out
 

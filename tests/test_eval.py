@@ -192,6 +192,24 @@ def test_le_runner_note_les_reponses_et_ecrit_son_artefact(questions_jouet, tmp_
     assert payload["run"]["questions_sha256"]
 
 
+def test_un_modele_prefixe_ne_casse_pas_le_nom_de_fichier(questions_jouet, tmp_path):
+    """L'étiquette contient le nom du modèle, et une passerelle le préfixe par
+    l'éditeur : `openai/gpt-oss-120b` viserait un sous-dossier inexistant."""
+    payload, out = execute(
+        personas=["factual"],
+        questions_path=questions_jouet,
+        provider=ScriptedProvider(),
+        runs_dir=tmp_path / "runs",
+        label="test-run-openai/gpt-oss-120b",
+    )
+
+    assert out.parent == tmp_path / "runs"
+    assert out.name == "test-run-openai-gpt-oss-120b.json"
+    # L'étiquette d'origine survit dans l'artefact : c'est elle qui relie le run
+    # aux lignes de `llm_calls`.
+    assert payload["run"]["label"] == "test-run-openai/gpt-oss-120b"
+
+
 def test_le_run_label_atteint_le_fournisseur(questions_jouet, tmp_path):
     """C'est ce qui rend les lignes de `llm_calls` attribuables à un run."""
     provider = ScriptedProvider()

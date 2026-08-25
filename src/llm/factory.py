@@ -25,6 +25,7 @@ def get_provider(model: str | None = None) -> LLMProvider:
             return OpenAIProvider(
                 model=model or settings.openai_model,
                 cache=get_cache(),
+                base_url=settings.openai_base_url,
                 reasoning_effort=settings.openai_reasoning_effort,
                 verbosity=settings.openai_verbosity,
                 timeout_s=settings.openai_timeout_s,

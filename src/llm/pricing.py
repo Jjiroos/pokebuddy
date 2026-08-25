@@ -29,6 +29,11 @@ PRICING_USD_PER_MTOK: dict[str, Price] = {
     "gpt-4.1-mini": Price(0.40, 0.10, 1.60),
     "gpt-4.1-nano": Price(0.10, 0.025, 0.40),
     "gpt-4o-mini": Price(0.15, 0.075, 0.60),
+    # Servis par Groq, via OPENAI_BASE_URL. Tarif catalogue Groq relevé le
+    # 2026-08-25 : le palier Developer ne facture rien, mais publier un coût nul
+    # répondrait à « ce que j'ai payé », pas à « ce que ce système coûterait en
+    # production » — qui est la question posée par le tableau du README.
+    "openai/gpt-oss-120b": Price(0.15, 0.075, 0.60),
 }
 
 
@@ -50,8 +55,8 @@ def estimate_cost(
         price = PRICING_USD_PER_MTOK[model]
     except KeyError as exc:
         raise UnknownModelPricing(
-            f"Aucun tarif connu pour « {model} ». Ajoute-le à PRICING_USD_PER_MTOK "
-            f"(source : https://developers.openai.com/api/docs/pricing)."
+            f"Aucun tarif connu pour « {model} ». Ajoute-le à PRICING_USD_PER_MTOK, "
+            f"au tarif catalogue du fournisseur qui le sert."
         ) from exc
 
     # `usage.input_tokens` d'OpenAI inclut déjà les tokens servis par le cache

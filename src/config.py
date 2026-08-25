@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     llm_provider: str = "openai"
 
     openai_model: str = "gpt-5.6-luna"
+    # Vide = l'API d'OpenAI. Renseignée, elle vise une passerelle compatible.
+    # Seules celles qui exposent `/responses` conviennent : c'est cette API que
+    # le provider appelle, pas `/chat/completions`. Groq l'implémente ; Gemini
+    # et OpenRouter s'arrêtent à `/chat/completions` et échoueraient en 404.
+    openai_base_url: str | None = None
     # La famille GPT-5 refuse `temperature`. Ces deux leviers la remplacent ;
     # les épingler est ce qui rend l'éval du jalon 2 reproductible.
     openai_reasoning_effort: str = "low"
@@ -24,6 +29,14 @@ class Settings(BaseSettings):
 
     llm_cache_path: Path = Field(default=Path("~/.cache/pokebuddy/llm.sqlite"))
     pokeapi_cache_dir: Path = Field(default=Path("~/.cache/pokebuddy/pokeapi"))
+
+    @field_validator("openai_base_url", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, v: str | None) -> str | None:
+        # `OPENAI_BASE_URL=` dans .env arrive comme chaîne vide, que le SDK
+        # OpenAI n'accepte pas comme « valeur par défaut ». Une variable vide
+        # veut dire non renseignée.
+        return v or None
 
     @field_validator("llm_cache_path", "pokeapi_cache_dir")
     @classmethod
