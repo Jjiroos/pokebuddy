@@ -1,0 +1,117 @@
+# Les 10 questions multi-outils du jalon 4.
+#
+# Écrites et commitées AVANT le routeur. Elles sont la raison d'être de ce
+# jalon : **aucune ne se répond avec un seul outil**.
+#
+# La première moitié de chaque question est une description du Pokédex, que
+# seul le corpus permet d'attribuer à une espèce. La seconde est un fait
+# structuré, que seule la base relationnelle contient. Un pipeline en un coup
+# échoue des deux façons : s'il interroge la base, il ne sait pas de quel
+# Pokémon on parle ; s'il interroge le corpus, il n'a pas le fait.
+#
+# C'est ce qui rend le routeur mesurable au lieu d'être décoratif. Si ces
+# questions ne progressent pas, LangGraph n'a rien apporté et il faut le dire.
+#
+# Vérité terrain : `source` porte les deux moitiés — l'entrée de Pokédex qui
+# identifie l'espèce, et la requête SQL qui donne le fait.
+#
+# Les `none_of` visent des confusions plausibles, pas des absurdités : c'est là
+# qu'un modèle qui devine plutôt qu'il ne cherche se trahit.
+
+- id: multi-feux-follets-types
+  category: multi
+  question: "Quel Pokémon le Pokédex décrit-il comme cherchant à avaler des feux follets, et de quels types est-il ?"
+  expected: "Téraclope — type Spectre"
+  source: "rag: species/356 [fr][black] « feux follets » ; sql: types de dusclops"
+  check:
+    kind: names
+    all_of: [[teraclope, dusclops], [spectre, ghost]]
+    # Le Spectre le plus évident de la série, et le mauvais.
+    none_of: [[ectoplasma, gengar]]
+
+- id: multi-qi-5000-attaque-spe
+  category: multi
+  question: "Le Pokédex attribue un QI de 5 000 à un Pokémon. Lequel, et quelle est son Attaque Spéciale de base ?"
+  expected: "Alakazam — 135"
+  source: "rag: species/65 [fr][y] « QI de 5 000 » ; sql: special_attack de alakazam"
+  check:
+    kind: names
+    all_of: [[alakazam], [135]]
+
+- id: multi-1400-degres-type
+  category: multi
+  question: "Quel Pokémon entretient des flammes à 1 400 °C dans son corps, et quel est son type ?"
+  expected: "Darumacho — type Feu"
+  source: "rag: species/555 [fr][black] « 1 400 °C » ; sql: types de darmanitan"
+  check:
+    kind: names
+    all_of: [[darumacho, darmanitan], [feu, fire]]
+
+- id: multi-armure-300kmh-types
+  category: multi
+  question: "Quel Pokémon vole à plus de 300 km/h malgré son armure d'acier, et de quels types est-il ?"
+  expected: "Airmure — Acier et Vol"
+  source: "rag: species/227 [fr][black] « 300 km/h » ; sql: types de skarmory"
+  check:
+    kind: names
+    all_of: [[airmure, skarmory], [acier, steel], [vol, flying]]
+    none_of: [[dracaufeu, charizard]]
+
+- id: multi-400kg-dex
+  category: multi
+  question: "Quel Pokémon mange 400 kg de nourriture par jour selon le Pokédex, et quel est son numéro national ?"
+  expected: "Ronflex — n° 143"
+  source: "rag: species/143 [fr][moon] « 400 kg » ; sql: national_dex_number de snorlax"
+  check:
+    kind: names
+    all_of: [[ronflex, snorlax], [143]]
+
+- id: multi-mille-ans-type
+  category: multi
+  question: "Quel Pokémon peut vivre mille ans et détient un pouvoir mystique dans ses neuf queues, et quel est son type ?"
+  expected: "Feunard — type Feu"
+  source: "rag: species/38 [fr][black] « mille ans » ; sql: types de ninetales"
+  check:
+    kind: names
+    all_of: [[feunard, ninetales], [feu, fire]]
+    # Feunard d'Alola est Glace : la forme standard ne l'est pas.
+    none_of: [[glace, ice]]
+
+- id: multi-genes-mew-attaque-spe
+  category: multi
+  question: "Quel Pokémon a été conçu en réorganisant les gènes de Mew, et quelle est son Attaque Spéciale de base ?"
+  expected: "Mewtwo — 154"
+  source: "rag: species/150 [fr][black] « gènes de Mew » ; sql: special_attack de mewtwo"
+  check:
+    kind: names
+    all_of: [[mewtwo], [154]]
+
+- id: multi-trempette-evolution
+  category: multi
+  question: "Quel Pokémon peut franchir une montagne en utilisant Trempette, et en quoi évolue-t-il ?"
+  expected: "Magicarpe — il évolue en Léviator"
+  source: "rag: species/129 [fr][black] « Trempette » ; sql: espèce dont evolves_from_species_id = magikarp"
+  check:
+    kind: names
+    all_of: [[magicarpe, magikarp], [leviator, gyarados]]
+
+- id: multi-1400m-illustrateur
+  category: multi
+  question: "Quel Pokémon vole à plus de 1 400 m d'altitude selon le Pokédex, et qui a illustré sa carte n° 4 du Set de Base ?"
+  expected: "Dracaufeu — Mitsuhiro Arita"
+  source: "rag: species/6 [fr][y] « 1 400 m » ; sql: illustrator de la carte base1-4"
+  check:
+    kind: names
+    # Trois sources pour une question : le corpus, puis deux tables.
+    all_of: [[dracaufeu, charizard], [mitsuhiro arita, arita]]
+
+- id: multi-dix-tonnes-type
+  category: multi
+  question: "Quel Pokémon peut tirer dix tonnes sans se reposer d'après le Pokédex, et quel est son type ?"
+  expected: "Bourrinos — type Sol"
+  source: "rag: species/750 [fr][ultra-moon] « dix tonnes » ; sql: types de mudsdale"
+  check:
+    kind: names
+    all_of: [[bourrinos, mudsdale], [sol, ground]]
+    # Un Pokémon de trait est « normal » à l'intuition, et ne l'est pas.
+    none_of: [[normal]]

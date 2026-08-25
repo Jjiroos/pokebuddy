@@ -1,0 +1,155 @@
+# Les 15 questions de lore du jalon 4.
+#
+# Écrites et commitées AVANT la moindre ligne de RAG, comme les 40 du jalon 2
+# l'avaient été avant l'outil SQL. C'est la seule preuve que le corpus n'a pas
+# été choisi pour les questions, ni les questions pour le corpus.
+#
+# Ce qu'elles mesurent : rien d'autre que le corpus ne peut y répondre. La base
+# relationnelle ne contient aucune de ces informations, et le modèle nu les
+# paraphrase de mémoire avec juste assez de vraisemblance pour se tromper.
+#
+# Vérité terrain : `flavor_text_entries` de PokéAPI, en français, déjà présentes
+# dans le cache d'ingestion. `source` porte l'espèce et la version du jeu, de
+# quoi retrouver l'entrée exacte en une commande.
+#
+# Note sur les nombres : le français écrit « 5 000 » avec une espace, et la
+# normalisation du grader réduit tout caractère non alphanumérique à une espace.
+# `numbers_all` chercherait « 5000 » et ne le trouverait pas. Les grands nombres
+# passent donc par `names`, avec les deux orthographes en alias.
+
+- id: lore-noctali-anneaux
+  category: lore
+  question: "Selon le Pokédex, que se passe-t-il quand Noctali s'expose à la lumière de la lune ?"
+  expected: "Ses anneaux brillent et il obtient un mystérieux pouvoir"
+  source: "pokeapi:pokemon-species/197 flavor_text_entries[fr][black]"
+  check:
+    kind: names
+    all_of: [[anneaux], [brillent, luisent, illuminent, brille]]
+
+- id: lore-teraclope-feux-follets
+  category: lore
+  question: "D'après le Pokédex, que Téraclope cherche-t-il à avaler ?"
+  expected: "Des feux follets"
+  source: "pokeapi:pokemon-species/356 flavor_text_entries[fr][black]"
+  check:
+    kind: names
+    all_of: [[feux follets, feu follet]]
+
+- id: lore-alakazam-qi
+  category: lore
+  question: "Quel quotient intellectuel le Pokédex attribue-t-il à Alakazam ?"
+  expected: "5 000"
+  source: "pokeapi:pokemon-species/65 flavor_text_entries[fr][y]"
+  check:
+    kind: names
+    all_of: [["5 000", 5000]]
+
+- id: lore-darumacho-temperature
+  category: lore
+  question: "À quelle température le Pokédex situe-t-il les flammes que Darumacho entretient dans son corps ?"
+  expected: "1 400 °C"
+  source: "pokeapi:pokemon-species/555 flavor_text_entries[fr][black]"
+  check:
+    kind: names
+    all_of: [["1 400", 1400]]
+
+- id: lore-airmure-vitesse
+  category: lore
+  question: "À quelle vitesse Airmure peut-il voler, selon le Pokédex, malgré son armure ?"
+  expected: "Plus de 300 km/h"
+  source: "pokeapi:pokemon-species/227 flavor_text_entries[fr][black]"
+  check:
+    kind: names
+    all_of: [[300]]
+
+- id: lore-ronflex-nourriture
+  category: lore
+  question: "Quelle quantité de nourriture Ronflex mange-t-il chaque jour d'après le Pokédex ?"
+  expected: "400 kg"
+  source: "pokeapi:pokemon-species/143 flavor_text_entries[fr][moon]"
+  check:
+    kind: names
+    all_of: [[400]]
+
+- id: lore-feunard-queues
+  category: lore
+  question: "Que dit le Pokédex des neuf queues de Feunard, et combien de temps peut-il vivre ?"
+  expected: "Ses neuf queues détiennent un pouvoir mystique ; il peut vivre mille ans"
+  source: "pokeapi:pokemon-species/38 flavor_text_entries[fr][black]"
+  check:
+    kind: names
+    all_of: [[mystique, mystiques], [mille ans, 1000 ans, "1 000 ans"]]
+
+- id: lore-mewtwo-origine
+  category: lore
+  question: "Comment le Pokédex explique-t-il l'origine de Mewtwo ?"
+  expected: "Conçu en réorganisant les gènes de Mew, par manipulation génétique"
+  source: "pokeapi:pokemon-species/150 flavor_text_entries[fr][black]"
+  check:
+    kind: names
+    all_of: [[genes, gene, adn], [mew]]
+    # « Mewtwo » contient « mew » ; la recherche du grader se fait sur des mots
+    # encadrés d'espaces, donc « mewtwo » ne valide pas l'alias « mew ».
+
+- id: lore-magicarpe-trempette
+  category: lore
+  question: "Selon le Pokédex, qu'un vénérable Magicarpe peut-il franchir en utilisant Trempette ?"
+  expected: "Une montagne"
+  source: "pokeapi:pokemon-species/129 flavor_text_entries[fr][black]"
+  check:
+    kind: names
+    all_of: [[montagne]]
+
+- id: lore-dracaufeu-altitude
+  category: lore
+  question: "À quelle altitude Dracaufeu peut-il voler d'après le Pokédex ?"
+  expected: "Plus de 1 400 m"
+  source: "pokeapi:pokemon-species/6 flavor_text_entries[fr][y]"
+  check:
+    kind: names
+    all_of: [["1 400", 1400]]
+
+- id: lore-tortank-canons
+  category: lore
+  question: "Que peuvent percer les trombes d'eau projetées par les canons de Tortank, selon le Pokédex ?"
+  expected: "Le métal le plus résistant"
+  source: "pokeapi:pokemon-species/9 flavor_text_entries[fr][black]"
+  check:
+    kind: names
+    all_of: [[metal]]
+
+- id: lore-aeropteryx-envol
+  category: lore
+  question: "À quelle vitesse Aéroptéryx doit-il s'élancer avant de pouvoir s'envoler ?"
+  expected: "40 km/h"
+  source: "pokeapi:pokemon-species/567 flavor_text_entries[fr][y]"
+  check:
+    kind: names
+    all_of: [[40]]
+
+- id: lore-bourrinos-charge
+  category: lore
+  question: "Quelle charge Bourrinos peut-il tirer sans se reposer, d'après le Pokédex ?"
+  expected: "Dix tonnes"
+  source: "pokeapi:pokemon-species/750 flavor_text_entries[fr][ultra-moon]"
+  check:
+    kind: names
+    all_of: [[dix tonnes, 10 tonnes]]
+
+- id: lore-flambusard-piquee
+  category: lore
+  question: "À quelle vitesse Flambusard fond-il sur ses proies en piqué, selon le Pokédex ?"
+  expected: "500 km/h"
+  source: "pokeapi:pokemon-species/663 flavor_text_entries[fr][moon]"
+  check:
+    kind: names
+    all_of: [[500]]
+
+- id: lore-ectoplasma-frissons
+  category: lore
+  question: "D'après le Pokédex, que signifie un frisson soudain lorsqu'il est question d'Ectoplasma ?"
+  expected: "Qu'un Ectoplasma rôde dans les parages"
+  source: "pokeapi:pokemon-species/94 flavor_text_entries[fr][lets-go-pikachu]"
+  check:
+    kind: names
+    all_of: [[rode, rode dans les parages, proximite, parages, pres]]
