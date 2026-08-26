@@ -1,0 +1,62 @@
+{
+  "run": {
+    "label": "20260826-190130-lore-openai/gpt-oss-120b",
+    "suite": "lore",
+    "started_at": "2026-08-26T19:01:30.474865+00:00",
+    "finished_at": "2026-08-26T19:01:32.956262+00:00",
+    "provider": "api.groq.com",
+    "model": "openai/gpt-oss-120b",
+    "personas": [
+      "pokedex"
+    ],
+    "questions_file": "/mnt/z/dev_workspace/pokebuddy/eval/questions-lore.yaml",
+    "questions_sha256": "954d3a41dc5a41a2",
+    "question_count": 2
+  },
+  "results": [
+    {
+      "id": "lore-noctali-anneaux",
+      "category": "lore",
+      "persona": "pokedex",
+      "question": "Selon le Pokédex, que se passe-t-il quand Noctali s'expose à la lumière de la lune ?",
+      "expected": "Ses anneaux brillent et il obtient un mystérieux pouvoir",
+      "answer": "Quand Noctali s'expose à la lumière de la lune, les anneaux qui le bordent brillent et il acquiert un mystérieux pouvoir.",
+      "confidence": 0.97,
+      "sources": [
+        "pokedex:umbreon/black",
+        "pokedex:umbreon/y",
+        "pokedex:umbreon/omega-ruby",
+        "pokedex:clefairy/y",
+        "pokedex:gigalith/x"
+      ],
+      "ok": true,
+      "detail": "tous les noms attendus, aucun nom interdit",
+      "error": null,
+      "input_tokens": 1756,
+      "output_tokens": 239,
+      "cost_usd": 0.0,
+      "latency_ms": 0,
+      "cache_hit": true
+    },
+    {
+      "id": "lore-teraclope-feux-follets",
+      "category": "lore",
+      "persona": "pokedex",
+      "question": "D'après le Pokédex, que Téraclope cherche-t-il à avaler ?",
+      "expected": "Des feux follets",
+      "answer": "Je ne sais pas ce que Téraclope cherche à avaler selon le Pokédex fourni.",
+      "confidence": 0.1,
+      "sources": [
+        "pokedex:cryogonal/white"
+      ],
+      "ok": false,
+      "detail": "manque ['feux follets']",
+      "error": null,
+      "input_tokens": 1550,
+      "output_tokens": 367,
+      "cost_usd": 0.0,
+      "latency_ms": 0,
+      "cache_hit": true
+    }
+  ]
+}
