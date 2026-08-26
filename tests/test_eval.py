@@ -14,8 +14,21 @@ import yaml
 from pydantic import BaseModel
 
 from eval.grader import KINDS, grade, normalize
-from eval.report import QuestionsDiverge, render_comparison, render_markdown, summarize
-from eval.runner import QUESTIONS_PATH, execute, load_questions
+from eval.report import (
+    CATEGORY_LABELS,
+    QuestionsDiverge,
+    render_comparison,
+    render_markdown,
+    summarize,
+)
+from eval.runner import (
+    DEFAULT_PERSONAS,
+    QUESTIONS_PATH,
+    SUITES,
+    execute,
+    load_questions,
+    questions_digest,
+)
 from src.api.schemas import RoutePlan
 from src.llm.provider import LLMResponse, Message
 
@@ -85,6 +98,18 @@ def test_un_kind_inconnu_est_une_erreur_pas_un_echec_silencieux():
 
 REPARTITION = {"factuel": 15, "agregation": 10, "illustrateur": 10, "piege": 5}
 
+# L'empreinte des 40 questions du jalon 2, publiée avec le 53,8 % puis avec le
+# 92,5 %. Elle est gelée : si elle bouge, les deux chiffres cessent d'être
+# comparables et tout ce que le README affirme s'écroule. La retenir ici la
+# rend mécanique plutôt que déclarative.
+EMPREINTE_GELEE = "b219b76777ad48f5"
+
+TAILLES = {"principal": 40, "lore": 15, "multi": 10}
+
+
+def test_l_empreinte_des_quarante_questions_n_a_pas_bouge():
+    assert questions_digest(QUESTIONS_PATH) == EMPREINTE_GELEE
+
 
 def test_le_jeu_de_questions_respecte_la_repartition_du_plan():
     questions = load_questions()
@@ -95,21 +120,45 @@ def test_le_jeu_de_questions_respecte_la_repartition_du_plan():
     assert compte == REPARTITION
 
 
-def test_chaque_question_est_verifiable():
+@pytest.mark.parametrize("suite", sorted(SUITES))
+def test_chaque_question_est_verifiable(suite):
     """Sans `source`, un tableau d'évaluation n'est qu'une affirmation."""
-    for q in load_questions():
+    for q in load_questions(SUITES[suite]):
         for champ in ("id", "category", "question", "expected", "source", "check"):
             assert q.get(champ), f"{q.get('id')} : champ « {champ} » manquant"
         assert q["check"]["kind"] in KINDS, f"{q['id']} : kind inconnu"
 
 
-def test_les_identifiants_sont_uniques():
-    ids = [q["id"] for q in load_questions()]
+@pytest.mark.parametrize("suite", sorted(SUITES))
+def test_les_identifiants_sont_uniques(suite):
+    ids = [q["id"] for q in load_questions(SUITES[suite])]
     assert len(set(ids)) == len(ids)
 
 
-def test_le_fichier_de_questions_est_du_yaml_valide():
-    assert isinstance(yaml.safe_load(QUESTIONS_PATH.read_text(encoding="utf-8")), list)
+@pytest.mark.parametrize("suite", sorted(SUITES))
+def test_le_fichier_de_questions_est_du_yaml_valide(suite):
+    assert isinstance(yaml.safe_load(SUITES[suite].read_text(encoding="utf-8")), list)
+
+
+@pytest.mark.parametrize("suite", sorted(SUITES))
+def test_chaque_suite_a_sa_taille_annoncee(suite):
+    assert len(load_questions(SUITES[suite])) == TAILLES[suite]
+
+
+@pytest.mark.parametrize("suite", sorted(SUITES))
+def test_chaque_suite_declare_ses_personas(suite):
+    """Une suite sans entrée ferait tomber `main()` sur un KeyError, au moment
+    précis où l'on croyait lancer une heure de run."""
+    assert DEFAULT_PERSONAS[suite]
+
+
+@pytest.mark.parametrize("suite", sorted(SUITES))
+def test_toute_categorie_est_rendue_par_le_rapport(suite):
+    """Le piège discret du rapport : une catégorie inconnue est **sautée**, pas
+    signalée. Une coquille dans `category` ferait disparaître des questions du
+    tableau sans que rien ne le dise."""
+    for q in load_questions(SUITES[suite]):
+        assert q["category"] in CATEGORY_LABELS, f"{q['id']} : catégorie non rendue"
 
 
 # --- le runner ------------------------------------------------------------

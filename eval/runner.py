@@ -8,7 +8,8 @@ jalons 3 et 4 comparables à celui-ci sans toucher à ce fichier.
 `ASGITransport` ne déclenche pas le `lifespan`, ce qui tombe bien : c'est le
 point où le fournisseur étiqueté est injecté.
 
-    python -m eval.runner [--model M] [--persona pokedex|factual|both] [--limit N]
+    python -m eval.runner [--suite principal|lore|multi]
+                          [--model M] [--persona pokedex|factual|both] [--limit N]
 """
 
 from __future__ import annotations
@@ -32,9 +33,29 @@ from src.api.main import create_app
 from src.api.schemas import Persona
 from src.llm.factory import get_provider
 from src.llm.provider import LLMProvider, LLMResponse, Message
+from src.obs import tracing
 
 QUESTIONS_PATH = Path(__file__).parent / "questions.yaml"
 RUNS_DIR = Path(__file__).parent / "runs"
+
+SUITES = {
+    "principal": QUESTIONS_PATH,
+    "lore": Path(__file__).parent / "questions-lore.yaml",
+    "multi": Path(__file__).parent / "questions-multi.yaml",
+}
+DEFAULT_SUITE = "principal"
+
+# **Les nouvelles suites tournent sur une seule persona, et c'est une décision
+# imposée par le débit.** L'écart de persona a été mesuré à zéro au jalon 3
+# (92,5 % des deux côtés) ; le remesurer sur chaque suite coûterait des heures
+# de plafond Groq pour reconfirmer un résultat déjà publié. La suite principale,
+# elle, continue sur les deux — c'est elle qui porte la comparaison historique,
+# et changer sa forme la rendrait incomparable.
+DEFAULT_PERSONAS = {
+    "principal": [Persona.pokedex, Persona.factual],
+    "lore": [Persona.pokedex],
+    "multi": [Persona.pokedex],
+}
 
 # Le cache SQLite sérialise ses écritures, et les paliers gratuits plafonnent en
 # tokens par minute autant qu'en requêtes : celui de Groq autorise 30 req/min
@@ -177,19 +198,25 @@ async def run(
     label: str | None = None,
     questions_path: Path = QUESTIONS_PATH,
     provider: LLMProvider | None = None,
+    suite: str = DEFAULT_SUITE,
 ) -> dict[str, Any]:
     questions = load_questions(questions_path)[:limit]
     provider = provider or get_provider(model)
     started = datetime.now(UTC)
-    label = label or f"{started:%Y%m%d-%H%M%S}-{provider.model}"
+    label = label or f"{started:%Y%m%d-%H%M%S}-{suite}-{provider.model}"
 
     results: list[dict[str, Any]] = []
-    for persona in personas:
-        results += await _run_persona(provider, questions, persona, label)
+    # L'étiquette du run devient un tag de trace, comme elle est déjà une
+    # colonne du grand livre : sans elle, deux runs se mélangent dans
+    # l'interface. Sans clés Langfuse, ce bloc ne fait rien.
+    with tracing.run_context(label):
+        for persona in personas:
+            results += await _run_persona(provider, questions, persona, label)
 
     payload = {
         "run": {
             "label": label,
+            "suite": suite,
             "started_at": started.isoformat(),
             "finished_at": datetime.now(UTC).isoformat(),
             "provider": provider.name,
@@ -226,26 +253,46 @@ def execute(**kwargs: Any) -> tuple[dict[str, Any], Path]:
     """Point d'entrée synchrone : exécute le run et persiste son artefact."""
     runs_dir = kwargs.pop("runs_dir", RUNS_DIR)
     payload = asyncio.run(run(**kwargs))
+    # Le SDK exporte par lots : un script qui se termine sans vider la file
+    # n'aurait laissé aucune trace du run qu'il vient de payer.
+    tracing.flush()
     return payload, save(payload, runs_dir)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Évaluation de la ligne de base.")
+    parser.add_argument(
+        "--suite",
+        default=DEFAULT_SUITE,
+        choices=sorted(SUITES),
+        help="jeu de questions (défaut : principal, les 40 de la comparaison historique)",
+    )
     parser.add_argument("--model", default=None, help="surcharge OPENAI_MODEL")
     parser.add_argument(
         "--persona",
-        default="both",
+        default=None,
         choices=["pokedex", "factual", "both"],
-        help="persona à évaluer (défaut : les deux, pour mesurer l'écart)",
+        help="persona à évaluer (défaut : celles de la suite)",
     )
     parser.add_argument("--limit", type=int, default=None, help="n premières questions")
     parser.add_argument("--label", default=None, help="nom du run (défaut : horodatage-modèle)")
     args = parser.parse_args()
 
-    personas = (
-        [Persona.pokedex, Persona.factual] if args.persona == "both" else [Persona(args.persona)]
+    if args.persona is None:
+        personas = DEFAULT_PERSONAS[args.suite]
+    elif args.persona == "both":
+        personas = [Persona.pokedex, Persona.factual]
+    else:
+        personas = [Persona(args.persona)]
+
+    payload, out = execute(
+        suite=args.suite,
+        questions_path=SUITES[args.suite],
+        model=args.model,
+        personas=personas,
+        limit=args.limit,
+        label=args.label,
     )
-    payload, out = execute(model=args.model, personas=personas, limit=args.limit, label=args.label)
     print(render_markdown(payload))
     print(f"\nArtefact : {out}")
 

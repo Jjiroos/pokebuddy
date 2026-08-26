@@ -6,6 +6,7 @@ LIMIT ?=
 MODEL ?=
 PERSONA ?=
 RUN ?=
+SUITE ?=
 
 # Les cibles qui tournent hors conteneur chargent .env comme Compose le fait
 # pour le service api : la couche LLM lit OPENAI_API_KEY dans l'environnement
@@ -46,8 +47,8 @@ ingest-tcg:                  ## make ingest-tcg [LIMIT=500] — cartes et illust
 ingest-lore:                 ## make ingest-lore [LIMIT=50] — entrées de Pokédex + plongements
 	docker compose run --rm api python -m src.ingest.lore $(if $(LIMIT),--limit $(LIMIT),)
 
-eval:                        ## make eval [MODEL=... PERSONA=pokedex|factual|both LIMIT=n]
-	$(DOTENV) uv run python -m eval.runner $(if $(MODEL),--model $(MODEL),) $(if $(PERSONA),--persona $(PERSONA),) $(if $(LIMIT),--limit $(LIMIT),)
+eval:                        ## make eval [SUITE=principal|lore|multi MODEL=... PERSONA=... LIMIT=n]
+	$(DOTENV) uv run python -m eval.runner $(if $(SUITE),--suite $(SUITE),) $(if $(MODEL),--model $(MODEL),) $(if $(PERSONA),--persona $(PERSONA),) $(if $(LIMIT),--limit $(LIMIT),)
 
 report:                      ## make report RUN=eval/runs/<fichier>.json
 	uv run python -m eval.report $(RUN)

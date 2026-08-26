@@ -33,6 +33,11 @@ services:
       POKEAPI_CACHE_DIR: /cache/pokeapi
       TCGDEX_CACHE_DIR: /cache/tcgdex
       FASTEMBED_CACHE_DIR: /cache/fastembed
+      # Facultatives : absentes, le traçage est muet et le service démarre
+      # exactement pareil.
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
       # `environment` prime sur `env_file`. Dans le réseau compose la base est
       # `db:5432` ; dans .env elle est en localhost, pour l'éval et les scripts
       # qui tournent sur l'hôte. Chacun sa vue, une seule vérité par contexte.

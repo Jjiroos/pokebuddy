@@ -21,6 +21,10 @@ CATEGORY_LABELS = {
     "agregation": "Agrégation",
     "illustrateur": "Illustrateurs",
     "piege": "Pièges",
+    # Les deux suites du jalon 4. Une catégorie absente du run est sautée, donc
+    # les trois suites se rendent avec le même code.
+    "lore": "Lore",
+    "multi": "Multi-outils",
 }
 
 

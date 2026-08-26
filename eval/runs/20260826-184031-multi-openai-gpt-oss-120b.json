@@ -1,0 +1,65 @@
+{
+  "run": {
+    "label": "20260826-184031-multi-openai/gpt-oss-120b",
+    "suite": "multi",
+    "started_at": "2026-08-26T18:40:31.286843+00:00",
+    "finished_at": "2026-08-26T18:40:36.708711+00:00",
+    "provider": "api.groq.com",
+    "model": "openai/gpt-oss-120b",
+    "personas": [
+      "pokedex"
+    ],
+    "questions_file": "/mnt/z/dev_workspace/pokebuddy/eval/questions-multi.yaml",
+    "questions_sha256": "c52a74abaa9c950d",
+    "question_count": 2
+  },
+  "results": [
+    {
+      "id": "multi-feux-follets-types",
+      "category": "multi",
+      "persona": "pokedex",
+      "question": "Quel Pokémon le Pokédex décrit-il comme cherchant à avaler des feux follets, et de quels types est-il ?",
+      "expected": "Téraclope — type Spectre",
+      "answer": "Téraclope (Dusclops) – de type Spectre",
+      "confidence": 0.95,
+      "sources": [
+        "pokedex:charmeleon/shield",
+        "pokedex:dusclops/black",
+        "pokedex:torracat/sun",
+        "pokedex:dusclops/shield",
+        "pokedex:simisear/white",
+        "SELECT p.name AS pokemon_name_en, STRING_AGG(t.name, ', ') AS types_en FROM pokemon AS p JOIN species AS s ON p.species_id = s.id JOIN pokemon_types AS pt ON p.id = pt.pokemon_id JOIN types AS t ON pt.type_id = t.id WHERE s.name = 'dusclops' AND p.is_default = TRUE GROUP BY p.name LIMIT 200"
+      ],
+      "ok": true,
+      "detail": "tous les noms attendus, aucun nom interdit",
+      "error": null,
+      "input_tokens": 3437,
+      "output_tokens": 477,
+      "cost_usd": 0.0007633499999999999,
+      "latency_ms": 2792,
+      "cache_hit": false
+    },
+    {
+      "id": "multi-qi-5000-attaque-spe",
+      "category": "multi",
+      "persona": "pokedex",
+      "question": "Le Pokédex attribue un QI de 5 000 à un Pokémon. Lequel, et quelle est son Attaque Spéciale de base ?",
+      "expected": "Alakazam — 135",
+      "answer": "Alakazam, Attaque Spéciale de base : 135",
+      "confidence": 0.99,
+      "sources": [
+        "pokedex:alakazam/y",
+        "pokedex:alakazam/sun",
+        "SELECT p.name AS pokemon_name_en, p.special_attack AS special_attack_base FROM pokemon AS p JOIN species AS s ON p.species_id = s.id WHERE s.name = 'alakazam' AND p.is_default = TRUE LIMIT 200"
+      ],
+      "ok": true,
+      "detail": "tous les noms attendus, aucun nom interdit",
+      "error": null,
+      "input_tokens": 3196,
+      "output_tokens": 412,
+      "cost_usd": 0.0007266,
+      "latency_ms": 4545,
+      "cache_hit": false
+    }
+  ]
+}

@@ -36,6 +36,7 @@ from src.api.prompts import (
 )
 from src.api.schemas import AnswerPayload, Persona, RoutePlan, SqlQuery
 from src.llm.provider import LLMProvider, LLMResponse
+from src.obs import tracing
 from src.tools.rag import LoreHit, search
 from src.tools.schema_prompt import schema_description
 from src.tools.sql import SqlRefused, run_query
@@ -82,8 +83,25 @@ def _parsed(resp: LLMResponse) -> Any:
     return resp.parsed
 
 
-def _call(state: AgentState, messages: list[dict[str, str]], schema: type) -> tuple[Any, list]:
-    resp = state["llm"].complete(messages, schema=schema)
+def _call(
+    state: AgentState, messages: list[dict[str, str]], schema: type, *, nom: str
+) -> tuple[Any, list]:
+    """Un appel de modèle, et la génération qui le donne à lire.
+
+    Le coût et les tokens voyagent déjà dans `LLMResponse` : les reporter dans
+    le span ne coûte rien de plus qu'une ligne, et `cache_hit` explique les
+    générations à latence nulle qu'un lecteur prendrait sinon pour un bug.
+    """
+    with tracing.span(
+        nom, kind=tracing.KIND_GENERATION, input=messages, model=state["llm"].model
+    ) as trace:
+        resp = state["llm"].complete(messages, schema=schema)
+        trace.update(
+            output=resp.parsed if resp.parsed is not None else (resp.refusal or resp.text),
+            usage_details={"input": resp.input_tokens, "output": resp.output_tokens},
+            cost_details={"total": resp.cost_usd},
+            metadata={"cache_hit": resp.cache_hit, "schema": schema.__name__},
+        )
     return _parsed(resp), [*state.get("responses", []), resp]
 
 
@@ -99,6 +117,7 @@ def route(state: AgentState) -> dict[str, Any]:
             {"role": "user", "content": state["question"]},
         ],
         RoutePlan,
+        nom="route",
     )
     assert isinstance(plan, RoutePlan)
     if not plan.needs_db and plan.lore_query is None:
@@ -112,11 +131,16 @@ def route(state: AgentState) -> dict[str, Any]:
 
 def search_lore(state: AgentState) -> dict[str, Any]:
     """Le corpus. Un échec n'interrompt rien : l'autre source peut suffire."""
-    try:
-        hits = search(state["lore_query"] or "", k=LORE_HITS)
-    except SQLAlchemyError as exc:
-        log.warning("recherche dans le corpus en échec (%s)", type(exc).__name__)
-        hits = []
+    requete = state["lore_query"] or ""
+    with tracing.span("corpus", kind=tracing.KIND_RETRIEVER, input=requete) as trace:
+        try:
+            hits = search(requete, k=LORE_HITS)
+        except SQLAlchemyError as exc:
+            log.warning("recherche dans le corpus en échec (%s)", type(exc).__name__)
+            hits = []
+        # Les distances partent dans la trace : c'est ce qui permet de relire
+        # après coup si le seuil a coupé trop court ou pas assez.
+        trace.update(output=[{"citation": h.citation, "distance": h.distance} for h in hits])
     if not hits:
         log.info("corpus muet sur « %s »", state.get("lore_query"))
     return {"lore_hits": hits}
@@ -138,18 +162,23 @@ def write_sql(state: AgentState) -> dict[str, Any]:
             {"role": "user", "content": question},
         ],
         SqlQuery,
+        nom="write_sql",
     )
     assert isinstance(query, SqlQuery)
 
     rows: list[dict[str, Any]] | None = None
     executed: str | None = None
     if query.sql:
-        try:
-            rows, executed = run_query(query.sql)
-        except SqlRefused as exc:
-            log.warning("SQL refusé (%s) : %s", exc, query.sql)
-        except SQLAlchemyError as exc:
-            log.warning("SQL en échec (%s) : %s", type(exc).__name__, query.sql)
+        with tracing.span("base", kind=tracing.KIND_TOOL, input=query.sql) as trace:
+            try:
+                rows, executed = run_query(query.sql)
+                trace.update(output={"lignes": len(rows or []), "executee": executed})
+            except SqlRefused as exc:
+                log.warning("SQL refusé (%s) : %s", exc, query.sql)
+                trace.update(level="WARNING", status_message=f"refusé : {exc}")
+            except SQLAlchemyError as exc:
+                log.warning("SQL en échec (%s) : %s", type(exc).__name__, query.sql)
+                trace.update(level="ERROR", status_message=type(exc).__name__)
     return {"sql_rows": rows, "executed_sql": executed, "responses": responses}
 
 
@@ -172,7 +201,7 @@ def write_answer(state: AgentState) -> dict[str, Any]:
             },
             {"role": "user", "content": _sources_message(state["question"], rows, hits)},
         ]
-    answer, responses = _call(state, messages, AnswerPayload)
+    answer, responses = _call(state, messages, AnswerPayload, nom="write_answer")
     return {"answer": answer, "responses": responses}
 
 
@@ -258,4 +287,9 @@ def answer_question(llm: LLMProvider, question: str, persona: str) -> AgentState
         "responses": [],
         "lore_hits": [],
     }
-    return compiled_graph().invoke(state)  # type: ignore[return-value]
+    with tracing.span(
+        "ask", input=question, metadata={"persona": persona, "fournisseur": llm.name}
+    ) as trace:
+        final: AgentState = compiled_graph().invoke(state)  # type: ignore[assignment]
+        trace.update(output=final["answer"], metadata={"sources": sources_of(final)})
+    return final

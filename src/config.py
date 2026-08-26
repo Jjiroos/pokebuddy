@@ -33,18 +33,25 @@ class Settings(BaseSettings):
     # lus depuis cette URL, unique source de vérité (voir la migration f1a2c3).
     database_url_ro: str = "postgresql+psycopg://pokebuddy_ro:pokebuddy_ro@db:5432/pokebuddy"
 
+    # Traçage. Absentes, le dépôt tourne à l'identique : voir src/obs/tracing.py,
+    # où la garantie est portée par notre code et vérifiée par un test.
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
+
     llm_cache_path: Path = Field(default=Path("~/.cache/pokebuddy/llm.sqlite"))
     pokeapi_cache_dir: Path = Field(default=Path("~/.cache/pokebuddy/pokeapi"))
     tcgdex_cache_dir: Path = Field(default=Path("~/.cache/pokebuddy/tcgdex"))
     # Le modèle ONNX de plongement, 220 Mo, téléchargé au premier usage.
     fastembed_cache_dir: Path = Field(default=Path("~/.cache/pokebuddy/fastembed"))
 
-    @field_validator("openai_base_url", mode="before")
+    @field_validator("openai_base_url", "langfuse_public_key", "langfuse_secret_key", mode="before")
     @classmethod
     def _blank_is_unset(cls, v: str | None) -> str | None:
         # `OPENAI_BASE_URL=` dans .env arrive comme chaîne vide, que le SDK
         # OpenAI n'accepte pas comme « valeur par défaut ». Une variable vide
-        # veut dire non renseignée.
+        # veut dire non renseignée — c'est aussi ce qui fait que
+        # `LANGFUSE_PUBLIC_KEY= make eval` éteint réellement le traçage.
         return v or None
 
     @field_validator(
