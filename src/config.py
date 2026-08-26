@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     llm_cache_path: Path = Field(default=Path("~/.cache/pokebuddy/llm.sqlite"))
     pokeapi_cache_dir: Path = Field(default=Path("~/.cache/pokebuddy/pokeapi"))
     tcgdex_cache_dir: Path = Field(default=Path("~/.cache/pokebuddy/tcgdex"))
+    # Le modèle ONNX de plongement, 220 Mo, téléchargé au premier usage.
+    fastembed_cache_dir: Path = Field(default=Path("~/.cache/pokebuddy/fastembed"))
 
     @field_validator("openai_base_url", mode="before")
     @classmethod
@@ -45,7 +47,9 @@ class Settings(BaseSettings):
         # veut dire non renseignée.
         return v or None
 
-    @field_validator("llm_cache_path", "pokeapi_cache_dir", "tcgdex_cache_dir")
+    @field_validator(
+        "llm_cache_path", "pokeapi_cache_dir", "tcgdex_cache_dir", "fastembed_cache_dir"
+    )
     @classmethod
     def _expand(cls, v: Path) -> Path:
         return v.expanduser()

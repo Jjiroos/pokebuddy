@@ -12,7 +12,7 @@ RUN ?=
 # du processus, pas dans Settings.
 DOTENV = set -a; [ -f .env ] && . ./.env; set +a;
 
-.PHONY: setup up down logs migrate revision ingest ingest-tcg eval report test lint fmt psql clean
+.PHONY: setup up down logs migrate revision ingest ingest-tcg ingest-lore eval report test lint fmt psql clean
 
 setup:                       ## venv + dépendances + hooks git
 	uv sync --all-groups
@@ -42,6 +42,9 @@ ingest:                      ## make ingest [LIMIT=50]
 
 ingest-tcg:                  ## make ingest-tcg [LIMIT=500] — cartes et illustrateurs
 	docker compose run --rm api python -m src.ingest.tcgdex $(if $(LIMIT),--limit $(LIMIT),)
+
+ingest-lore:                 ## make ingest-lore [LIMIT=50] — entrées de Pokédex + plongements
+	docker compose run --rm api python -m src.ingest.lore $(if $(LIMIT),--limit $(LIMIT),)
 
 eval:                        ## make eval [MODEL=... PERSONA=pokedex|factual|both LIMIT=n]
 	$(DOTENV) uv run python -m eval.runner $(if $(MODEL),--model $(MODEL),) $(if $(PERSONA),--persona $(PERSONA),) $(if $(LIMIT),--limit $(LIMIT),)

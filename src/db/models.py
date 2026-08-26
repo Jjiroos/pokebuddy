@@ -9,7 +9,8 @@ futur lecteur automatique, pas pour la beauté de la 3NF.
 
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -174,3 +175,40 @@ class Card(Base):
     category: Mapped[str | None] = mapped_column(String(32))
 
     card_set: Mapped[CardSet] = relationship(back_populates="cards")
+
+
+# Dimension du modèle de plongement (voir src/tools/rag.py). En dur ici parce
+# qu'une colonne `vector(n)` ne peut pas la déduire : changer de modèle impose
+# une migration, ce qui est une bonne chose — cela oblige à réindexer.
+EMBEDDING_DIM = 384
+
+
+class LoreChunk(Base):
+    """Une entrée de Pokédex, telle quelle. **C'est le document.**
+
+    Aucun découpage : ces textes font deux ou trois phrases, le grain naturel du
+    corpus. Découper ce qui est déjà court ajouterait un paramètre à régler sans
+    rien améliorer, et un paramètre non réglé est une dette.
+
+    C'est le seul contenu du projet que la base relationnelle ne sait pas
+    représenter : « quand il s'expose à la lumière de la lune, ses anneaux
+    brillent » n'est ni une statistique, ni un type, ni une évolution.
+    """
+
+    __tablename__ = "lore_chunks"
+    __table_args__ = (UniqueConstraint("species_id", "text_hash", name="uq_lore_species_text"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    species_id: Mapped[int] = mapped_column(
+        ForeignKey("species.id", ondelete="CASCADE"), index=True
+    )
+    # Le jeu d'origine. Il part dans la citation : `pokedex:noctali/black` se
+    # revérifie en une commande, comme le SQL de l'outil relationnel.
+    version: Mapped[str] = mapped_column(String(64))
+    text: Mapped[str] = mapped_column(Text)
+    # PokéAPI répète la même entrée à l'identique entre versions d'un même jeu.
+    # L'empreinte du texte est la clé de déduplication.
+    text_hash: Mapped[str] = mapped_column(String(64), index=True)
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM))
+
+    species: Mapped[Species] = relationship()
