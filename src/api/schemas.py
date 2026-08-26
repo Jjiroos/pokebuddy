@@ -37,13 +37,34 @@ class AnswerPayload(_Strict):
     confidence: float
 
 
-class SqlPlan(_Strict):
-    """Ce que le modèle propose d'exécuter, avant toute validation.
+class RoutePlan(_Strict):
+    """Où aller chercher de quoi répondre. Décidé avant toute exécution.
 
-    `sql = None` est une réponse légitime et attendue : elle dit « cette
-    question ne se répond pas depuis ces tables ». La forcer à produire du SQL
-    coûte que coûte fabriquerait des requêtes plausibles et fausses.
+    Les deux sources sont indépendantes : une question peut demander la base, le
+    corpus, **les deux**, ou aucune. Tout mettre à faux est une réponse légitime
+    — elle dit « aucun outil ne répond à ça » — et forcer le routeur à choisir
+    quelque chose fabriquerait des recherches plausibles et vides.
+
+    `needs_db` n'est qu'un booléen, et pas la requête elle-même : sur une
+    question multi-outils, **le SQL ne peut pas être écrit à ce stade**. « Quel
+    Pokémon mange 400 kg par jour, et quel est son numéro national ? » exige de
+    savoir d'abord qu'il s'agit de Ronflex. La requête s'écrit après le corpus,
+    dans un second appel qui voit ce qu'il a trouvé.
+
+    `lore_query` n'est pas la question : c'est elle **reformulée en
+    affirmation**, à la manière d'une entrée de Pokédex. Le modèle de plongement
+    est symétrique — entraîné sur des paires de phrases de même nature — et
+    apparier une question à une affirmation le met en échec. Mesuré sur huit
+    cas : 1 bonne réponse en tête avec la question brute, 8 avec l'affirmation.
     """
+
+    needs_db: bool
+    lore_query: str | None
+    reason: str
+
+
+class SqlQuery(_Strict):
+    """La requête, écrite une fois le corpus consulté."""
 
     sql: str | None
     reason: str

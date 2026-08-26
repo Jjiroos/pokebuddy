@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from eval.grader import KINDS, grade, normalize
 from eval.report import QuestionsDiverge, render_comparison, render_markdown, summarize
 from eval.runner import QUESTIONS_PATH, execute, load_questions
-from src.api.schemas import SqlPlan
+from src.api.schemas import RoutePlan
 from src.llm.provider import LLMResponse, Message
 
 # --- le grader ------------------------------------------------------------
@@ -125,11 +125,11 @@ class ScriptedProvider:
         self._answer = answer
         self._parsed = parsed
         self.labels: list[str | None] = []
-        # Le harnais tape sur la vraie route : depuis le jalon 3 elle demande
-        # d'abord un plan SQL. Ce double n'en produit pas, ce qui fait replier
-        # `/ask` sur la réponse de mémoire — sans base, c'est le seul chemin
-        # exécutable hors ligne.
-        self.sql_calls = 0
+        # Le harnais tape sur la vraie route : depuis le jalon 4 elle commence
+        # par router. Ce double ne choisit aucun outil, ce qui fait replier
+        # `/ask` sur la réponse de mémoire — sans base ni corpus, c'est le seul
+        # chemin exécutable hors ligne.
+        self.route_calls = 0
 
     def complete(
         self,
@@ -140,9 +140,9 @@ class ScriptedProvider:
     ) -> LLMResponse:
         self.labels.append(run_label)
         parsed = None
-        if schema is SqlPlan:
-            self.sql_calls += 1
-            parsed = SqlPlan(sql=None, reason="hors ligne")
+        if schema is RoutePlan:
+            self.route_calls += 1
+            parsed = RoutePlan(needs_db=False, lore_query=None, reason="hors ligne")
         elif self._parsed and schema is not None:
             parsed = schema.model_validate({"answer": self._answer, "confidence": 0.75})
         return LLMResponse(
@@ -229,11 +229,11 @@ def test_le_run_label_atteint_le_fournisseur(questions_jouet, tmp_path):
         runs_dir=tmp_path / "runs",
         label="test-run",
     )
-    # Deux appels par question depuis le jalon 3 : le plan SQL, puis la réponse.
-    # Les deux doivent porter l'étiquette, sinon la moitié du coût d'un run
-    # n'est plus attribuable dans le grand livre.
+    # Deux appels par question sur ce chemin : le routeur, puis la réponse.
+    # Tous doivent porter l'étiquette, sinon une part du coût d'un run n'est
+    # plus attribuable dans le grand livre.
     assert provider.labels == ["test-run-pokedex"] * (2 * len(QUESTIONS_JOUET))
-    assert provider.sql_calls == len(QUESTIONS_JOUET)
+    assert provider.route_calls == len(QUESTIONS_JOUET)
 
 
 def test_une_question_en_erreur_ne_fait_pas_tomber_le_run(questions_jouet, tmp_path):

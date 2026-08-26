@@ -19,6 +19,7 @@ dependencies = [
     "sqlglot>=30.17.0",
     "pgvector>=0.5.0",
     "fastembed>=0.8.0",
+    "langgraph>=1.2.11",
 ]
 
 [dependency-groups]

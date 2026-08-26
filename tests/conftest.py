@@ -24,17 +24,21 @@ from pydantic import BaseModel  # noqa: E402
 
 from src.api.deps import get_llm  # noqa: E402
 from src.api.main import create_app  # noqa: E402
-from src.api.schemas import SqlPlan  # noqa: E402
+from src.api.schemas import RoutePlan, SqlQuery  # noqa: E402
 from src.llm.provider import LLMResponse, Message  # noqa: E402
 
 
 class FakeProvider:
     """Double du fournisseur. Aucun test du projet ne sort sur le réseau.
 
-    Depuis le jalon 3, `/ask` appelle le modèle deux fois : d'abord pour un
-    `SqlPlan`, puis pour la réponse. `sql_plan` pilote le premier appel ; laissé
-    à None, il fait répondre « pas de SQL », ce qui replie sur le chemin nu du
-    jalon 1 — celui que la plupart de ces tests vérifient.
+    Depuis le jalon 4, `/ask` appelle le modèle deux à trois fois : le routeur,
+    puis la requête SQL si le routeur l'a demandée, puis la rédaction. Chaque
+    appel est reconnu à son schéma, jamais à son rang — un test qui compterait
+    les appels se casserait au premier changement de topologie du graphe.
+
+    `route` et `sql` pilotent les deux premiers ; laissés à None, ils font
+    répondre « aucun outil », ce qui replie sur le chemin nu du jalon 1 — celui
+    que la plupart de ces tests vérifient.
     """
 
     name = "fake"
@@ -44,12 +48,27 @@ class FakeProvider:
         self,
         payloads: list[dict] | None = None,
         refusal: str | None = None,
-        sql_plan: dict | None = None,
+        route: dict | None = None,
+        sql: dict | None = None,
     ) -> None:
         self._payloads = payloads or []
         self._refusal = refusal
-        self._sql_plan = sql_plan or {"sql": None, "reason": "double de test"}
+        self._route = route or {
+            "needs_db": False,
+            "lore_query": None,
+            "reason": "double de test",
+        }
+        self._sql = sql or {"sql": None, "reason": "double de test"}
         self.calls: list[tuple[list[Message], type[BaseModel] | None]] = []
+
+    def _parse(self, schema: type[BaseModel] | None) -> BaseModel | None:
+        if schema is RoutePlan:
+            return RoutePlan.model_validate(self._route)
+        if schema is SqlQuery:
+            return SqlQuery.model_validate(self._sql)
+        if schema is not None and self._payloads:
+            return schema.model_validate(self._payloads.pop(0))
+        return None
 
     def complete(
         self,
@@ -59,11 +78,9 @@ class FakeProvider:
         run_label: str | None = None,
     ) -> LLMResponse:
         self.calls.append(([dict(m) for m in messages], schema))
-        parsed = None
-        if self._refusal is None and schema is SqlPlan:
-            parsed = SqlPlan.model_validate(self._sql_plan)
-        elif schema is not None and self._payloads and self._refusal is None:
-            parsed = schema.model_validate(self._payloads.pop(0))
+        # Un refus est un contenu, pas une exception : il arrive à la place de
+        # la sortie structurée, quel que soit le schéma demandé.
+        parsed = None if self._refusal is not None else self._parse(schema)
         return LLMResponse(
             text="texte brut",
             model=self.model,

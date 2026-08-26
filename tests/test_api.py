@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from src.api.schemas import AnswerPayload, PokemonFacts, SqlPlan
+from src.api.schemas import AnswerPayload, PokemonFacts, RoutePlan, SqlQuery
 from src.tools.sql import SqlRefused
 from tests.conftest import FakeProvider
 
 ANSWER = {"answer": "Dracaufeu pèse 90,5 kg.", "confidence": 0.82}
+# Le routeur qui demande la base et rien d'autre : le chemin du jalon 3.
+BESOIN_DB = {"needs_db": True, "lore_query": None, "reason": "fait chiffré"}
 FACTS = {
     "name": "Dracaufeu",
     "national_dex_number": 6,
@@ -54,11 +56,11 @@ def test_ask_ne_cite_rien_quand_le_sql_ne_s_applique_pas(make_client):
     assert body["sources"] == []
 
 
-def test_ask_demande_un_plan_sql_puis_une_reponse(make_client):
-    """Les deux temps du pipeline, dans cet ordre."""
+def test_ask_route_puis_redige_quand_aucun_outil_n_est_choisi(make_client):
+    """Sans outil, le pipeline coûte deux appels : router, puis rédiger."""
     provider = FakeProvider([ANSWER])
     make_client(provider).post("/ask", json={"question": "Poids ?"})
-    assert [schema for _messages, schema in provider.calls] == [SqlPlan, AnswerPayload]
+    assert [schema for _messages, schema in provider.calls] == [RoutePlan, AnswerPayload]
 
 
 @pytest.mark.parametrize(
@@ -68,8 +70,8 @@ def test_ask_demande_un_plan_sql_puis_une_reponse(make_client):
 def test_la_persona_change_l_invite_systeme(make_client, persona, attendu):
     provider = FakeProvider([ANSWER])
     make_client(provider).post("/ask", json={"question": "Poids ?", "persona": persona})
-    # calls[0] génère le SQL et ne porte aucune persona : c'est le second appel,
-    # celui qui rédige, qui doit la porter.
+    # Le routeur ne porte aucune persona : c'est le dernier appel, celui qui
+    # rédige, qui doit la porter.
     messages, _ = provider.calls[-1]
     assert messages[0]["role"] == "system"
     assert attendu in messages[0]["content"]
@@ -144,15 +146,18 @@ def test_ask_execute_le_sql_et_cite_la_requete(make_client, monkeypatch):
     """
     executee = "SELECT name FROM pokemon WHERE speed > 130 LIMIT 200"
     monkeypatch.setattr(
-        "src.api.routes.run_query",
+        "src.agent.graph.run_query",
         lambda sql: ([{"name": "barraskewda"}], executee),
     )
     provider = FakeProvider(
-        [ANSWER], sql_plan={"sql": "SELECT name FROM pokemon WHERE speed > 130", "reason": "ok"}
+        [ANSWER],
+        route=BESOIN_DB,
+        sql={"sql": "SELECT name FROM pokemon WHERE speed > 130", "reason": "ok"},
     )
     body = make_client(provider).post("/ask", json={"question": "Eau rapides ?"}).json()
 
     assert body["sources"] == [executee]
+    assert [schema for _messages, schema in provider.calls] == [RoutePlan, SqlQuery, AnswerPayload]
     # Les lignes doivent parvenir au modèle : sans elles il répondrait de mémoire.
     assert "barraskewda" in provider.calls[-1][0][1]["content"]
 
@@ -164,8 +169,10 @@ def test_un_sql_refuse_replie_sur_la_memoire(make_client, monkeypatch):
     def refuse(sql: str):
         raise SqlRefused("table interdite")
 
-    monkeypatch.setattr("src.api.routes.run_query", refuse)
-    provider = FakeProvider([ANSWER], sql_plan={"sql": "SELECT * FROM secrets", "reason": "ok"})
+    monkeypatch.setattr("src.agent.graph.run_query", refuse)
+    provider = FakeProvider(
+        [ANSWER], route=BESOIN_DB, sql={"sql": "SELECT * FROM secrets", "reason": "ok"}
+    )
     resp = make_client(provider).post("/ask", json={"question": "Poids ?"})
 
     assert resp.status_code == 200
@@ -174,17 +181,23 @@ def test_un_sql_refuse_replie_sur_la_memoire(make_client, monkeypatch):
 
 def test_zero_ligne_est_annonce_au_modele(make_client, monkeypatch):
     """Un résultat vide doit être dit, pas comblé de mémoire."""
-    monkeypatch.setattr("src.api.routes.run_query", lambda sql: ([], "SELECT 1 LIMIT 200"))
-    provider = FakeProvider([ANSWER], sql_plan={"sql": "SELECT 1", "reason": "ok"})
+    monkeypatch.setattr("src.agent.graph.run_query", lambda sql: ([], "SELECT 1 LIMIT 200"))
+    provider = FakeProvider([ANSWER], route=BESOIN_DB, sql={"sql": "SELECT 1", "reason": "ok"})
     make_client(provider).post("/ask", json={"question": "Poids ?"})
 
     contenu = provider.calls[-1][0][1]["content"]
     assert "(0)" in contenu
 
 
-def test_la_consommation_cumule_les_deux_appels(make_client):
-    """Deux appels par question : publier le coût d'un seul serait faux."""
+def test_la_consommation_cumule_tous_les_appels(make_client, monkeypatch):
+    """Le pipeline coûte deux ou trois appels selon le chemin : publier le coût
+    d'un seul serait faux, et le figer à deux le deviendrait au jalon 4."""
     provider = FakeProvider([ANSWER])
     body = make_client(provider).post("/ask", json={"question": "Poids ?"}).json()
     assert body["usage"]["input_tokens"] == 240  # 120 × 2
     assert body["usage"]["cost_usd"] == pytest.approx(0.00014)
+
+    monkeypatch.setattr("src.agent.graph.run_query", lambda sql: ([], "SELECT 1 LIMIT 200"))
+    outille = FakeProvider([ANSWER], route=BESOIN_DB, sql={"sql": "SELECT 1", "reason": "ok"})
+    body = make_client(outille).post("/ask", json={"question": "Poids ?"}).json()
+    assert body["usage"]["input_tokens"] == 360  # 120 × 3
