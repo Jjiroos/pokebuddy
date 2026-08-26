@@ -40,6 +40,12 @@ jeu, cartes du JCC et illustrateurs. Mets `needs_db` à vrai si la réponse en
 dépend, même partiellement. Tu n'écris pas la requête ici : elle sera écrite
 ensuite, quand on saura de quel Pokémon il s'agit.
 
+**L'absence de chiffre n'est pas un critère.** « De quel Pokémon Roucarnage
+évolue-t-il ? », « de quel type est Papilusion ? », « qui a illustré cette
+carte ? » ne contiennent aucune statistique et sont pourtant des questions de
+base : une évolution, un type, un illustrateur sont des colonnes. Le critère
+est la nature du fait, pas sa forme.
+
 **Le corpus des entrées de Pokédex** — descriptions, comportements, légendes,
 tout ce qui est raconté plutôt que chiffré. Écris dans `lore_query` une phrase
 **affirmative**, formulée comme une entrée de Pokédex :
@@ -55,7 +61,11 @@ Pokémon on parle, la base pour le fait chiffré. Une question qui décrit un
 Pokémon sans le nommer est de celles-là.
 
 Si aucune source ne convient, laisse `needs_db` à faux et `lore_query` à null,
-et dis pourquoi dans `reason`. C'est une réponse valable, pas un échec.\
+et dis pourquoi dans `reason`. C'est une réponse valable, pas un échec.
+
+Enfin, `lore_query` sert à **chercher**, pas à répondre : n'y écris jamais la
+réponse que tu crois connaître. Une recherche partie d'une réponse inventée ne
+peut que la confirmer.\
 """
 
 SQL_PROMPT = """\
@@ -64,9 +74,12 @@ Tu traduis une question en UNE requête PostgreSQL de lecture.
 Règles :
 - une seule instruction SELECT, jamais d'écriture ;
 - n'utilise que les tables et colonnes décrites ci-dessous ;
-- **les apostrophes se doublent** : 'L''appel des Légendes', jamais
-  'L\\'appel des Légendes'. La convention MySQL avec antislash ne fonctionne
-  pas ici et fait échouer la requête en silence ;
+- **une apostrophe À L'INTÉRIEUR d'un texte se double** ; les guillemets
+  simples qui délimitent ce texte, eux, restent simples :
+      juste : 'L''appel des Légendes'   'water'   'Set de Base'
+      faux  : 'L\\'appel des Légendes'  ''water''  ''Set de Base''
+  L'antislash est une convention MySQL, qui ne s'applique pas ici ; doubler
+  les délimiteurs rend la requête inanalysable et elle sera rejetée ;
 - renvoie assez de colonnes pour que la réponse soit rédigeable : un nom, pas
   seulement un identifiant ;
 - si des extraits de Pokédex te sont fournis, ils t'indiquent de quel Pokémon
@@ -88,6 +101,12 @@ lignes de la base, extraits du Pokédex, ou les deux.
   pas, dis-le et baisse ta confiance.
 - Un résultat vide veut dire que la source ne contient pas la réponse. Le dire
   est la bonne réponse ; inventer ne l'est pas.
+- À l'inverse, les lignes non vides sont le **résultat d'une requête écrite pour
+  cette question** : les filtres qu'elle demandait ont déjà été appliqués. Une
+  ligne présente satisfait donc les conditions de la question, même quand la
+  colonne filtrée n'est pas affichée — une liste de vitesses sans colonne de
+  type reste bien la liste demandée. Ne réclame pas une preuve que la requête a
+  déjà administrée.
 - Un extrait de Pokédex qui ne parle pas du sujet de la question est un extrait
   hors sujet, pas une réponse approximative. Ignore-le et dis que tu ne sais pas.
 - Les noms peuvent être en anglais dans les lignes : donne-les en français
