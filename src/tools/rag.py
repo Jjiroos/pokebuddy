@@ -16,11 +16,13 @@ Comme l'outil SQL, celui-ci lit par le rôle en lecture seule.
 
 from __future__ import annotations
 
+import logging
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from src.config import get_settings
@@ -28,7 +30,15 @@ from src.db.models import LoreChunk, Species
 from src.db.session import get_ro_engine
 from src.ingest.lore import MODEL_NAME
 
+log = logging.getLogger("tools.rag")
+
 DEFAULT_K = 5
+
+# Quand l'espèce est connue, on ne cherche plus : on lit ses entrées. Une espèce
+# en a 4 à 12, de deux ou trois phrases ; en rendre 8 tient largement dans la
+# fenêtre et garantit que la bonne y est. Le classement par distance ne sert
+# plus qu'à mettre la plus plausible en tête.
+SPECIES_K = 8
 
 # Distance cosinus, entre 0 (identique) et 2 (opposé).
 #
@@ -82,22 +92,61 @@ def embed_query(query: str) -> list[float]:
     return next(iter(_model().embed([query]))).tolist()
 
 
-def search(query: str, *, k: int = DEFAULT_K, max_distance: float = MAX_DISTANCE) -> list[LoreHit]:
-    """Les entrées les plus proches, **ou rien**.
+def _named(nom: str):
+    """« Téraclope » ou « dusclops » : le routeur rend ce que la question écrit.
 
-    `max_distance` est ce qui permet de répondre « je ne sais pas » plutôt que
-    de tendre au modèle cinq entrées sans rapport avec la question.
+    Égalité insensible à la casse plutôt qu'un `ILIKE` : la valeur vient du
+    modèle, et `%` y serait un joker. Un nom d'espèce ne doit pas pouvoir
+    ramener la moitié du corpus.
     """
-    vecteur = embed_query(query)
-    distance = LoreChunk.embedding.cosine_distance(vecteur)
+    valeur = nom.strip().lower()
+    return or_(func.lower(Species.name_fr) == valeur, func.lower(Species.name) == valeur)
+
+
+def _rows(session: Session, distance, condition, limite: int):
     stmt = (
         select(Species.name_fr, Species.name, LoreChunk.version, LoreChunk.text, distance)
         .join(Species, Species.id == LoreChunk.species_id)
         .order_by(distance)
-        .limit(k)
+        .limit(limite)
     )
+    if condition is not None:
+        stmt = stmt.where(condition)
+    return session.execute(stmt).all()
+
+
+def search(
+    query: str,
+    *,
+    k: int = DEFAULT_K,
+    max_distance: float = MAX_DISTANCE,
+    species: str | None = None,
+) -> list[LoreHit]:
+    """Les entrées de l'espèce nommée, ou les plus proches, ou rien.
+
+    **Deux régimes, et c'est le constat du jalon 4 qui les sépare.** Quand la
+    question nomme l'espèce, chercher est le mauvais outil : la réponse est dans
+    ses entrées, et une similarité calculée sur une requête que le routeur a dû
+    inventer part chercher ailleurs. On filtre, et le plancher de distance ne
+    s'applique pas — le filtre *est* la garantie de pertinence.
+
+    Quand elle ne la nomme pas, la similarité redevient le bon outil, avec son
+    plancher : c'est lui qui permet de répondre « je ne sais pas » plutôt que de
+    tendre au modèle cinq entrées sans rapport.
+
+    Un nom d'espèce non résolu — accent manquant, forme inattendue — **replie
+    sur la similarité** plutôt que sur le vide : une orthographe ratée ne doit
+    pas coûter la question.
+    """
+    vecteur = embed_query(query)
+    distance = LoreChunk.embedding.cosine_distance(vecteur)
     with Session(get_ro_engine()) as session:
-        lignes = session.execute(stmt).all()
+        if species:
+            lignes = _rows(session, distance, _named(species), SPECIES_K)
+            if lignes:
+                return keep_close_enough(lignes, math.inf)
+            log.info("espèce « %s » non résolue : repli sur la similarité", species)
+        lignes = _rows(session, distance, None, k)
     return keep_close_enough(lignes, max_distance)
 
 

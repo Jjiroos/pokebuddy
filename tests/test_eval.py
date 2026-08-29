@@ -191,7 +191,7 @@ class ScriptedProvider:
         parsed = None
         if schema is RoutePlan:
             self.route_calls += 1
-            parsed = RoutePlan(needs_db=False, lore_query=None, reason="hors ligne")
+            parsed = RoutePlan(needs_db=False, lore_query=None, species=None, reason="hors ligne")
         elif self._parsed and schema is not None:
             parsed = schema.model_validate({"answer": self._answer, "confidence": 0.75})
         return LLMResponse(

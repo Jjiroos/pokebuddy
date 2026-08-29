@@ -21,12 +21,15 @@ from src.tools.sql import MAX_ROWS
 NOTES = f"""\
 Notes indispensables :
 
-- **Toute colonne `name` contient l'identifiant anglais de PokéAPI**, en
-  minuscules et avec des traits d'union : `gyarados`, `wooper`, `water`,
-  `flying`. Le français vit dans les colonnes `name_fr` : `species.name_fr`
-  (`Léviator`), `types.name_fr` (`Eau`, `Vol`), `card_sets.name_fr`.
-  Pour une question posée en français, filtrer sur `name_fr` — ne jamais
-  traduire un nom de mémoire pour le comparer à `name`.
+- **Les colonnes `name` des tables PokéAPI contiennent l'identifiant anglais**,
+  en minuscules et avec des traits d'union : `gyarados`, `wooper`, `water`,
+  `flying`. Le français vit dans les colonnes `name_fr` — `species.name_fr`
+  (`Léviator`), `types.name_fr` (`Eau`, `Vol`), `card_sets.name_fr`,
+  `cards.name_fr`. Pour une question posée en français, filtrer sur `name_fr` —
+  ne jamais traduire un nom de mémoire pour le comparer à `name`.
+- **`pokemon` n'a pas de colonne `name_fr`.** Elle n'existe pas : le nom
+  français d'une forme s'obtient en joignant `species` et en lisant
+  `species.name_fr`. Écrire `pokemon.name_fr` fait échouer la requête.
 - `pokemon` contient une ligne par **forme**, pas par espèce. Les
   méga-évolutions, formes régionales et Gigamax sont des lignes de plein droit,
   avec `is_default = false`. « Les formes standard » veut dire
@@ -44,7 +47,17 @@ Notes indispensables :
 - Les cartes du JCC sont dans `cards`, leur extension dans `card_sets`.
   Les questions nomment l'extension en français (`card_sets.name_fr` :
   « Set de Base », « Voltage Éclatant ») et la carte par son numéro
-  (`cards.local_id`, qui est du **texte**, pas un entier).
+  (`cards.local_id`, qui est du **texte**, pas un entier). **Une extension et un
+  numéro identifient une carte à eux seuls** : n'ajoute pas de filtre sur le nom
+  de la carte, il ne peut que la faire disparaître.
+- **`cards` échappe à la règle des identifiants en minuscules.** Ses noms
+  viennent de TCGdex et non de PokéAPI : `cards.name_en` vaut `Lugia`,
+  `cards.name_fr` vaut `Dracaufeu`, capitalisés. Ce sont des noms d'affichage,
+  bons à renvoyer, mauvais à filtrer.
+- **Aucune colonne ne relie `cards` à `species` ni à `pokemon`** : les deux
+  sources n'ont pas d'identifiant commun, et la jointure n'existe pas. Une
+  question du type « la carte de ce Pokémon » ne se répond que par l'extension
+  et le numéro qu'elle donne ; s'ils manquent, mets `sql` à null.
 - `pokemon_game_appearances` n'est renseignée que pour les générations I à VII :
   c'est une lacune de la source, pas de l'ingestion.
 - La base est en **lecture seule** et `LIMIT {MAX_ROWS}` est imposé d'office.\

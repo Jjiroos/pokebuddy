@@ -12,7 +12,7 @@ comportement intéressant se vérifie sans réseau et sans 220 Mo d'ONNX.
 
 from __future__ import annotations
 
-from src.tools.rag import MAX_DISTANCE, LoreHit, keep_close_enough
+from src.tools.rag import MAX_DISTANCE, LoreHit, _named, keep_close_enough
 
 # (name_fr, name_en, version, texte, distance) — la forme que rend la requête.
 PROCHE = ("Téraclope", "dusclops", "black", "Il avale des feux follets.", 0.12)
@@ -51,3 +51,28 @@ def test_la_citation_est_une_cle_pas_une_etiquette():
     donc l'identifiant anglais, celui que la base porte, et pas le nom français."""
     (hit,) = keep_close_enough([PROCHE], MAX_DISTANCE)
     assert hit.citation == "pokedex:dusclops/black"
+
+
+# --- le filtre par espèce -------------------------------------------------
+
+
+def _sql(expression) -> str:
+    return str(expression.compile(compile_kwargs={"literal_binds": True}))
+
+
+def test_le_nom_d_espece_est_compare_en_egalite_pas_en_joker():
+    """La valeur vient du modèle. Avec un `ILIKE`, un « % » égaré ramènerait la
+    moitié du corpus sous l'étiquette d'une seule espèce — une source fausse et
+    crédible, exactement ce que le projet cherche à éviter."""
+    rendu = _sql(_named("%"))
+    assert "LIKE" not in rendu.upper()
+    # Le « % » est une valeur comparée, pas un motif.
+    assert "lower(species.name_fr) = '%'" in rendu
+
+
+def test_le_nom_est_cherche_en_francais_comme_en_anglais():
+    """Le routeur rend ce que la question écrit, et les questions sont en
+    français ; les entrées, elles, sont indexées sur l'identifiant anglais."""
+    rendu = _sql(_named("  Téraclope  "))
+    assert "species.name_fr" in rendu and "species.name" in rendu
+    assert "'téraclope'" in rendu  # normalisé : espaces retirés, minuscules

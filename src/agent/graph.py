@@ -68,6 +68,7 @@ class AgentState(TypedDict, total=False):
     persona: str
     needs_db: bool
     lore_query: str | None
+    lore_species: str | None
     lore_hits: list[LoreHit]
     sql_rows: list[dict[str, Any]] | None
     executed_sql: str | None
@@ -120,21 +121,28 @@ def route(state: AgentState) -> dict[str, Any]:
         nom="route",
     )
     assert isinstance(plan, RoutePlan)
-    if not plan.needs_db and plan.lore_query is None:
+    if not plan.needs_db and plan.lore_query is None and plan.species is None:
         log.info("aucun outil pour « %s » : %s", state["question"], plan.reason)
     return {
         "needs_db": plan.needs_db,
         "lore_query": plan.lore_query,
+        "lore_species": plan.species,
         "responses": responses,
     }
 
 
 def search_lore(state: AgentState) -> dict[str, Any]:
     """Le corpus. Un échec n'interrompt rien : l'autre source peut suffire."""
-    requete = state["lore_query"] or ""
-    with tracing.span("corpus", kind=tracing.KIND_RETRIEVER, input=requete) as trace:
+    espece = state.get("lore_species")
+    # Sans reformulation, la question brute suffit à classer : on rend 8 des
+    # ~10 entrées de l'espèce, l'ordre décide de la tête de liste, pas du
+    # contenu. C'est précisément ce que le filtre par espèce rend possible.
+    requete = state.get("lore_query") or state["question"]
+    with tracing.span(
+        "corpus", kind=tracing.KIND_RETRIEVER, input={"query": requete, "species": espece}
+    ) as trace:
         try:
-            hits = search(requete, k=LORE_HITS)
+            hits = search(requete, k=LORE_HITS, species=espece)
         except SQLAlchemyError as exc:
             log.warning("recherche dans le corpus en échec (%s)", type(exc).__name__)
             hits = []
@@ -248,8 +256,13 @@ def sources_of(state: AgentState) -> list[str]:
 # --- le graphe ------------------------------------------------------------
 
 
+def _wants_lore(state: AgentState) -> bool:
+    """Nommer l'espèce suffit à vouloir le corpus, même sans reformulation."""
+    return bool(state.get("lore_query") or state.get("lore_species"))
+
+
 def _after_route(state: AgentState) -> str:
-    if state.get("lore_query"):
+    if _wants_lore(state):
         return "search_lore"
     return "write_sql" if state.get("needs_db") else "write_answer"
 

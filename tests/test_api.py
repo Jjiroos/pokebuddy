@@ -8,7 +8,7 @@ from tests.conftest import FakeProvider
 
 ANSWER = {"answer": "Dracaufeu pèse 90,5 kg.", "confidence": 0.82}
 # Le routeur qui demande la base et rien d'autre : le chemin du jalon 3.
-BESOIN_DB = {"needs_db": True, "lore_query": None, "reason": "fait chiffré"}
+BESOIN_DB = {"needs_db": True, "lore_query": None, "species": None, "reason": "fait chiffré"}
 FACTS = {
     "name": "Dracaufeu",
     "national_dex_number": 6,

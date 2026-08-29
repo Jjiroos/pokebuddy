@@ -56,10 +56,21 @@ class RoutePlan(_Strict):
     est symétrique — entraîné sur des paires de phrases de même nature — et
     apparier une question à une affirmation le met en échec. Mesuré sur huit
     cas : 1 bonne réponse en tête avec la question brute, 8 avec l'affirmation.
+
+    `species` est l'espèce que la question **nomme**, telle qu'elle l'écrit, et
+    rien d'autre. C'est le champ qui sépare les deux régimes mesurés au jalon 4.
+    Quand la question nomme l'espèce et cherche le fait (« que mange Ronflex,
+    selon le Pokédex ? »), la bonne opération est un **filtre** : la similarité
+    n'a rien à trancher, et lui demander une phrase affirmative oblige à
+    inventer la réponse — c'est ce qui coûtait la moitié de la suite lore.
+    Quand la question donne le fait et cherche l'espèce (« quel Pokémon mange
+    400 kg par jour ? »), `species` vaut null et la similarité redevient le bon
+    outil, celui qui rend 90 %.
     """
 
     needs_db: bool
     lore_query: str | None
+    species: str | None
     reason: str
 
 

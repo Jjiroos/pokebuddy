@@ -56,6 +56,7 @@ class FakeProvider:
         self._route = route or {
             "needs_db": False,
             "lore_query": None,
+            "species": None,
             "reason": "double de test",
         }
         self._sql = sql or {"sql": None, "reason": "double de test"}

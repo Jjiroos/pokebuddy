@@ -22,13 +22,26 @@ from tests.conftest import FakeProvider
 
 ANSWER = {"answer": "Téraclope est de type Spectre.", "confidence": 0.9}
 
-AUCUN_OUTIL = {"needs_db": False, "lore_query": None, "reason": "de mémoire"}
-BESOIN_DB = {"needs_db": True, "lore_query": None, "reason": "fait chiffré"}
-BESOIN_CORPUS = {"needs_db": False, "lore_query": "Il avale des feux follets.", "reason": "lore"}
+AUCUN_OUTIL = {"needs_db": False, "lore_query": None, "species": None, "reason": "de mémoire"}
+BESOIN_DB = {"needs_db": True, "lore_query": None, "species": None, "reason": "fait chiffré"}
+BESOIN_CORPUS = {
+    "needs_db": False,
+    "lore_query": "Il avale des feux follets.",
+    "species": None,
+    "reason": "lore",
+}
 BESOIN_DES_DEUX = {
     "needs_db": True,
     "lore_query": "Il avale des feux follets.",
+    "species": None,
     "reason": "corpus puis base",
+}
+# L'espèce est nommée : le corpus se lit par filtre, pas par similarité.
+ESPECE_NOMMEE = {
+    "needs_db": False,
+    "lore_query": None,
+    "species": "Téraclope",
+    "reason": "la question nomme l'espèce",
 }
 
 TERACLOPE = LoreHit(
@@ -60,16 +73,59 @@ def _invite_de_redaction(provider: FakeProvider) -> str:
         (AUCUN_OUTIL, [RoutePlan, AnswerPayload]),
         (BESOIN_DB, [RoutePlan, SqlQuery, AnswerPayload]),
         (BESOIN_CORPUS, [RoutePlan, AnswerPayload]),
+        (ESPECE_NOMMEE, [RoutePlan, AnswerPayload]),
         (BESOIN_DES_DEUX, [RoutePlan, SqlQuery, AnswerPayload]),
     ],
 )
 def test_le_routeur_commande_les_appels(monkeypatch, route, attendus):
     """Le corpus ne coûte aucun appel LLM ; la base en coûte un de plus."""
-    monkeypatch.setattr("src.agent.graph.search", lambda q, k=5: [TERACLOPE])
+    monkeypatch.setattr("src.agent.graph.search", lambda q, k=5, species=None: [TERACLOPE])
     monkeypatch.setattr("src.agent.graph.run_query", lambda sql: ([], "SELECT 1 LIMIT 200"))
     provider = FakeProvider([ANSWER], route=route, sql={"sql": "SELECT 1", "reason": "ok"})
     _ask(provider)
     assert [schema for _messages, schema in provider.calls] == attendus
+
+
+def test_une_espece_nommee_suffit_a_consulter_le_corpus(monkeypatch):
+    """Le constat du jalon 4, câblé : quand la question nomme l'espèce, il n'y a
+    rien à reformuler. Exiger `lore_query` pour aller au corpus obligerait le
+    routeur à inventer une affirmation — c'est ce qui coûtait la moitié de la
+    suite lore."""
+    vus = []
+    monkeypatch.setattr(
+        "src.agent.graph.search",
+        lambda q, k=5, species=None: vus.append((q, species)) or [TERACLOPE],
+    )
+    provider = FakeProvider([ANSWER], route=ESPECE_NOMMEE)
+    etat = _ask(provider, "Que Téraclope cherche-t-il à avaler ?")
+
+    assert vus and vus[0][1] == "Téraclope"
+    assert sources_of(etat) == ["pokedex:dusclops/black"]
+
+
+def test_sans_reformulation_la_question_brute_sert_au_classement(monkeypatch):
+    """Filtrer par espèce rend 8 entrées sur ~10 : le classement décide de la
+    tête de liste, pas du contenu. La question brute y suffit, et elle a
+    l'avantage de ne rien inventer."""
+    vus = []
+    monkeypatch.setattr(
+        "src.agent.graph.search",
+        lambda q, k=5, species=None: vus.append(q) or [TERACLOPE],
+    )
+    _ask(FakeProvider([ANSWER], route=ESPECE_NOMMEE), "Que cherche-t-il à avaler ?")
+    assert vus == ["Que cherche-t-il à avaler ?"]
+
+
+def test_une_espece_non_nommee_laisse_la_similarite_travailler(monkeypatch):
+    """L'autre régime, celui qui rend 90 % : la description est donnée, l'espèce
+    manque, et c'est la recherche vectorielle qui doit trancher."""
+    vus = []
+    monkeypatch.setattr(
+        "src.agent.graph.search",
+        lambda q, k=5, species=None: vus.append((q, species)) or [TERACLOPE],
+    )
+    _ask(FakeProvider([ANSWER], route=BESOIN_CORPUS))
+    assert vus == [("Il avale des feux follets.", None)]
 
 
 def test_le_corpus_est_consulte_avant_que_le_sql_s_ecrive(monkeypatch):
@@ -77,7 +133,7 @@ def test_le_corpus_est_consulte_avant_que_le_sql_s_ecrive(monkeypatch):
     n'est écrite qu'une fois l'espèce identifiée. L'ordre n'est pas cosmétique
     — sans lui, « quel Pokémon avale des feux follets, et de quels types
     est-il ? » n'a pas de filtre à écrire."""
-    monkeypatch.setattr("src.agent.graph.search", lambda q, k=5: [TERACLOPE])
+    monkeypatch.setattr("src.agent.graph.search", lambda q, k=5, species=None: [TERACLOPE])
     monkeypatch.setattr("src.agent.graph.run_query", lambda sql: ([{"t": "ghost"}], "SELECT 1"))
     provider = FakeProvider([ANSWER], route=BESOIN_DES_DEUX, sql={"sql": "SELECT 1", "reason": ""})
     _ask(provider)
@@ -118,7 +174,7 @@ def test_un_sql_refuse_laisse_le_corpus_continuer(monkeypatch):
     def refuse(sql: str):
         raise SqlRefused("table interdite")
 
-    monkeypatch.setattr("src.agent.graph.search", lambda q, k=5: [TERACLOPE])
+    monkeypatch.setattr("src.agent.graph.search", lambda q, k=5, species=None: [TERACLOPE])
     monkeypatch.setattr("src.agent.graph.run_query", refuse)
     provider = FakeProvider(
         [ANSWER], route=BESOIN_DES_DEUX, sql={"sql": "SELECT * FROM secrets", "reason": ""}
@@ -133,7 +189,7 @@ def test_un_corpus_en_panne_laisse_le_sql_continuer(monkeypatch):
     """Le symétrique : la base peut suffire quand la recherche vectorielle
     tombe. Une panne de pgvector ne doit pas faire un 500."""
 
-    def tombe(query, k=5):
+    def tombe(query, k=5, species=None):
         raise OperationalError("SELECT 1", {}, Exception("pgvector absent"))
 
     monkeypatch.setattr("src.agent.graph.search", tombe)
@@ -151,7 +207,7 @@ def test_les_deux_outils_en_echec_replient_sur_la_memoire(monkeypatch):
     def refuse(sql: str):
         raise SqlRefused("table interdite")
 
-    monkeypatch.setattr("src.agent.graph.search", lambda q, k=5: [])
+    monkeypatch.setattr("src.agent.graph.search", lambda q, k=5, species=None: [])
     monkeypatch.setattr("src.agent.graph.run_query", refuse)
     provider = FakeProvider([ANSWER], route=BESOIN_DES_DEUX, sql={"sql": "SELECT 1", "reason": ""})
     etat = _ask(provider)
@@ -167,7 +223,7 @@ def test_zero_ligne_et_zero_passage_sont_annonces_au_modele(monkeypatch):
     rien est une information — la source ne contient pas la réponse — et la
     taire ferait répondre de mémoire à une question à laquelle la base a
     répondu « non »."""
-    monkeypatch.setattr("src.agent.graph.search", lambda q, k=5: [])
+    monkeypatch.setattr("src.agent.graph.search", lambda q, k=5, species=None: [])
     monkeypatch.setattr("src.agent.graph.run_query", lambda sql: ([], "SELECT 1 LIMIT 200"))
     provider = FakeProvider([ANSWER], route=BESOIN_DES_DEUX, sql={"sql": "SELECT 1", "reason": ""})
     _ask(provider)
@@ -193,7 +249,7 @@ def test_les_sources_citent_la_requete_executee_pas_celle_proposee(monkeypatch):
 
 def test_une_question_multi_outils_cite_deux_sources_de_nature_differente(monkeypatch):
     """La promesse du jalon, sous sa forme vérifiable."""
-    monkeypatch.setattr("src.agent.graph.search", lambda q, k=5: [TERACLOPE])
+    monkeypatch.setattr("src.agent.graph.search", lambda q, k=5, species=None: [TERACLOPE])
     monkeypatch.setattr("src.agent.graph.run_query", lambda sql: ([{"t": "ghost"}], "SELECT t"))
     provider = FakeProvider([ANSWER], route=BESOIN_DES_DEUX, sql={"sql": "SELECT t", "reason": ""})
     etat = _ask(provider)

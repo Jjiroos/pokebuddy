@@ -35,10 +35,11 @@ def system_prompt(persona: Persona) -> str:
 ROUTER_PROMPT = """\
 Tu décides où aller chercher de quoi répondre. Deux sources, indépendantes.
 
-**La base relationnelle** — statistiques, types, évolutions, apparitions par
-jeu, cartes du JCC et illustrateurs. Mets `needs_db` à vrai si la réponse en
-dépend, même partiellement. Tu n'écris pas la requête ici : elle sera écrite
-ensuite, quand on saura de quel Pokémon il s'agit.
+**La base relationnelle** — statistiques, types, évolutions, **génération
+d'origine**, apparitions par jeu, cartes du JCC et illustrateurs. Mets
+`needs_db` à vrai si la réponse en dépend, même partiellement. Tu n'écris pas la
+requête ici : elle sera écrite ensuite, quand on saura de quel Pokémon il
+s'agit.
 
 **L'absence de chiffre n'est pas un critère.** « De quel Pokémon Roucarnage
 évolue-t-il ? », « de quel type est Papilusion ? », « qui a illustré cette
@@ -47,25 +48,37 @@ base : une évolution, un type, un illustrateur sont des colonnes. Le critère
 est la nature du fait, pas sa forme.
 
 **Le corpus des entrées de Pokédex** — descriptions, comportements, légendes,
-tout ce qui est raconté plutôt que chiffré. Écris dans `lore_query` une phrase
-**affirmative**, formulée comme une entrée de Pokédex :
+tout ce qui est raconté plutôt que chiffré. **Deux cas, qui ne se traitent pas
+pareil.**
 
-    « Quel Pokémon mange 400 kg par jour ? »
-    -> « Il mange 400 kg de nourriture par jour. »
+1. **La question nomme le Pokémon** — « que dit le Pokédex des neuf queues de
+   Feunard ? ». Écris ce nom dans `species`, tel que la question l'écrit. On
+   lira directement les entrées de cette espèce : tu n'as rien à deviner.
+   `lore_query` ne sert alors qu'à les classer — mets-y le **sujet cherché**
+   (« ses neuf queues, leur pouvoir »), jamais une réponse que tu crois
+   connaître.
 
-La recherche compare des phrases de même nature ; une question interrogative
-n'y trouve rien. Laisse `lore_query` à null si le corpus n'a rien à dire.
+2. **La question décrit le Pokémon sans le nommer** — « quel Pokémon mange
+   400 kg par jour ? ». Laisse `species` à null et écris dans `lore_query` une
+   phrase **affirmative**, reprenant la description que la question donne :
 
-Beaucoup de questions demandent **les deux** : le corpus pour savoir de quel
-Pokémon on parle, la base pour le fait chiffré. Une question qui décrit un
+       « Quel Pokémon mange 400 kg par jour ? »
+       -> « Il mange 400 kg de nourriture par jour. »
+
+   La recherche compare des phrases de même nature ; une question interrogative
+   n'y trouve rien. Ici la description est dans la question : tu n'inventes rien.
+
+Ne mets jamais dans `lore_query` un fait que la question ne donne pas. Une
+recherche partie d'une réponse inventée ne peut que la confirmer.
+
+Laisse `species` et `lore_query` à null si le corpus n'a rien à dire.
+
+Beaucoup de questions demandent **les deux sources** : le corpus pour savoir de
+quel Pokémon on parle, la base pour le fait chiffré. Une question qui décrit un
 Pokémon sans le nommer est de celles-là.
 
 Si aucune source ne convient, laisse `needs_db` à faux et `lore_query` à null,
-et dis pourquoi dans `reason`. C'est une réponse valable, pas un échec.
-
-Enfin, `lore_query` sert à **chercher**, pas à répondre : n'y écris jamais la
-réponse que tu crois connaître. Une recherche partie d'une réponse inventée ne
-peut que la confirmer.\
+et dis pourquoi dans `reason`. C'est une réponse valable, pas un échec.\
 """
 
 SQL_PROMPT = """\
