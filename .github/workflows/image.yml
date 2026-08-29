@@ -1,0 +1,52 @@
+# Publication de l'image sur ghcr.io.
+#
+# **Déclenchement volontaire uniquement** : un tag `v*`, ou un lancement à la
+# main. Publier à chaque push sur `main` marcherait aussi, mais pousser un
+# artefact public est une action qui mérite un geste explicite — basculer sur
+# `push: branches: [main]` demande une ligne si tu changes d'avis.
+#
+# L'image ne contient pas le modèle de plongement (220 Mo) : il se télécharge au
+# premier usage dans le volume `appcache`, comme les autres caches. C'est ce qui
+# évite de faire porter à chaque `docker pull` un fichier que la plupart des
+# lecteurs ne demanderont jamais.
+
+name: Image
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  publier:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=sha
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

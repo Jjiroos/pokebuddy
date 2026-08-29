@@ -21,7 +21,13 @@ services:
       retries: 20
 
   api:
+    # `build` d'abord : depuis un clone, `docker compose up` construit et
+    # fonctionne sans dépendre d'un registre. `image` nomme le résultat, ce qui
+    # rend `docker compose pull` possible une fois l'image publiée — et
+    # `IMAGE_TAG=v0.1.0 docker compose pull` suffit alors à démarrer sans
+    # compiler quoi que ce soit.
     build: .
+    image: ghcr.io/jjiroos/pokebuddy:${IMAGE_TAG:-latest}
     env_file: .env
     environment:
       # inotify ne traverse pas certains montages (réseau, WSL) : sans polling

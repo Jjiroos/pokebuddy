@@ -349,6 +349,13 @@ make ingest-lore             # 5 233 entrées de Pokédex + leurs plongements
 make test                    # doit passer sans réseau
 ```
 
+L'image est aussi publiée sur `ghcr.io/jjiroos/pokebuddy` : depuis un clone,
+`make up` la construit, mais `IMAGE_TAG=v0.1.0 docker compose pull` puis
+`docker compose up` démarrent sans rien compiler. Elle ne contient pas le
+modèle de plongement (220 Mo) — il se télécharge au premier usage dans le
+volume `appcache`, pour ne pas faire porter à chaque `docker pull` un fichier
+que la plupart des lecteurs ne demanderont jamais.
+
 Vérifier que la pile répond :
 
 ```bash
