@@ -214,9 +214,12 @@ test : si elle bouge, le 53,8 % → 92,5 % → 93,8 % cesse d'être comparable.
   question
      │
      ▼
- ① routeur ········ un appel : quelles sources ? (needs_db, lore_query)
+ ① routeur ········ un appel : quelles sources, et ce que la question donne
+     │                  (needs_db, species, lore_query)
      │
-     ├─ si lore_query ──▶  RAG Tool · pgvector, 5 233 entrées de Pokédex
+     ├─ corpus ─────────▶  RAG Tool · pgvector, 5 233 entrées de Pokédex
+     │                     espèce nommée   -> filtre sur ses entrées
+     │                     espèce inconnue -> similarité, avec son plancher
      │                     aucun appel au modèle — la recherche est locale
      │                          │
      │                          └── l'espèce est identifiée, et sert de filtre
@@ -278,20 +281,35 @@ demandé (502). Les avaler produirait une réponse vide et silencieuse.
 l'ajouter serait exactement l'erreur que ce jalon évite : empiler un outil qui
 ne change aucun chiffre, puis l'appeler une capacité.
 
-**La requête envoyée au corpus n'est pas la question de l'utilisateur.** C'est
-la question reformulée en affirmation, par le routeur, dans l'appel qu'il
-faisait de toute façon — zéro appel de modèle en plus. La raison est mesurée,
-pas supposée : le modèle de plongement est *symétrique*, entraîné sur des
-paires de phrases de même nature, et apparier une question interrogative à une
-entrée de Pokédex déclarative le met en échec. Sur huit cas multi-outils, la
-question brute plaçait **1** bonne espèce en tête ; l'affirmation en place
-**8**.
+**Le corpus se consulte de deux façons, et c'est une mesure qui les a
+séparées.** Le routeur ne se contente pas de dire « va voir le corpus » : il
+dit *ce que la question donne*.
 
-Et **cette mesure a un domaine de validité que je n'avais pas vu** : elle vaut
-quand la question *contient* le fait et cherche l'espèce. Quand elle nomme
-l'espèce et cherche le fait, la reformulation oblige à inventer la réponse, et
-la suite lore le paie — 46,7 % contre 90 % en multi-outils. Le diagnostic
-complet est dans la section Évaluation ; c'est le premier chantier du jalon 5.
+| La question… | Ce qui manque | Comment on consulte |
+|---|---|---|
+| **nomme** l'espèce — « que dit le Pokédex des queues de Feunard ? » | le fait | **filtre** `WHERE species_id = …`, 8 entrées sur ~10, sans plancher de distance |
+| la **décrit** sans la nommer — « quel Pokémon mange 400 kg/jour ? » | l'espèce | **similarité**, avec son plancher |
+
+Le second cas est celui pour lequel la recherche vectorielle existe, et la
+raison de la reformulation en affirmation y est mesurée : le modèle de
+plongement est *symétrique*, entraîné sur des paires de phrases de même nature,
+et apparier une question interrogative à une entrée déclarative le met en
+échec. Sur huit cas, la question brute plaçait **1** bonne espèce en tête ;
+l'affirmation en plaçait **8**.
+
+Le premier cas, je l'avais d'abord traité comme le second, et **c'est le jalon
+4 qui me l'a fait voir en chiffrant l'écart** : 46,7 % en lore contre 90 % en
+multi-outils. La cause n'était pas le modèle mais ma conception — demander la
+forme affirmative d'une question dont la réponse est *inconnue* oblige à
+inventer la réponse, et la recherche partait chercher l'invention. Il n'existe
+aucune forme affirmative de « que cherche-t-il à avaler ? » qui ne soit pas
+déjà une réponse. Quand l'espèce est nommée, il n'y a rien à chercher : la
+réponse est dans ses entrées, et un filtre les rend toutes. La suite lore est
+passée de **46,7 % à 93,3 %**.
+
+Un nom d'espèce non résolu — accent manquant, forme inattendue — replie sur la
+similarité plutôt que sur le vide : une orthographe ratée ne doit pas coûter la
+question.
 
 **La recherche sait ne rien renvoyer.** Un index vectoriel rend *toujours* ses
 k plus proches voisins : interrogé sur la capitale de la France, il rend les
