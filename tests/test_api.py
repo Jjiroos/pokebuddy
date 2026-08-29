@@ -201,3 +201,27 @@ def test_la_consommation_cumule_tous_les_appels(make_client, monkeypatch):
     outille = FakeProvider([ANSWER], route=BESOIN_DB, sql={"sql": "SELECT 1", "reason": "ok"})
     body = make_client(outille).post("/ask", json={"question": "Poids ?"}).json()
     assert body["usage"]["input_tokens"] == 360  # 120 × 3
+
+
+# --- le front --------------------------------------------------------------
+
+
+def test_la_racine_sert_le_front(make_client):
+    resp = make_client(FakeProvider()).get("/")
+    assert resp.status_code == 200
+    assert "Pokébuddy" in resp.text
+
+
+@pytest.mark.parametrize("chemin", ["/health", "/docs", "/openapi.json"])
+def test_le_montage_du_front_ne_masque_pas_les_routes(make_client, monkeypatch, chemin):
+    """Le piège du montage à la racine : Starlette essaie les routes dans
+    l'ordre d'enregistrement, et un `StaticFiles` monté trop tôt avalerait
+    toute l'API en rendant des 404 parfaitement silencieux."""
+    monkeypatch.setattr("src.api.routes.ping", lambda: True)
+    assert make_client(FakeProvider()).get(chemin).status_code == 200
+
+
+def test_ask_reste_joignable_sous_le_front(make_client):
+    resp = make_client(FakeProvider([ANSWER])).post("/ask", json={"question": "Poids ?"})
+    assert resp.status_code == 200
+    assert resp.json()["answer"] == ANSWER["answer"]

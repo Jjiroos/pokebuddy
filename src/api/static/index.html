@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pokébuddy — agent Pokédex outillé</title>
+<!-- En ligne : évite un 404 sur /favicon.ico, et un fichier de plus dans le dépôt. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23b8422e'/%3E%3Cpath d='M2 16h28' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23fff'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%23b8422e'/%3E%3C/svg%3E">
+
+<!--
+  Une page, aucun build.
+
+  React vient d'un CDN et `htm` remplace JSX par des gabarits balisés : ni npm,
+  ni bundler, ni étage supplémentaire dans le Dockerfile, ni job de build en CI.
+  Pour un champ de saisie et une réponse, une chaîne d'outillage Node coûterait
+  plus qu'elle ne rapporte — et `docker compose up` continue de marcher du
+  premier coup sur une machine vierge.
+
+  La contrepartie, et il faut la dire : sans accès au CDN, la page reste vide.
+  L'API, elle, répond quand même — et de toute façon elle a besoin du réseau
+  pour joindre le fournisseur.
+-->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/htm@3/dist/htm.umd.js" crossorigin></script>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --fond: #fbfbfa;      --carte: #ffffff;   --bord: #e4e2dd;
+    --texte: #1c1b19;     --doux: #6b6862;    --accent: #b8422e;
+    --code-fond: #f4f2ee; --ok: #2f7a4f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fond: #171614;    --carte: #201f1c;   --bord: #34322d;
+      --texte: #eceae5;   --doux: #9b978f;    --accent: #e0765c;
+      --code-fond: #14130f; --ok: #6fbb8c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1.25rem 4rem;
+    background: var(--fond); color: var(--texte);
+    font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; letter-spacing: -.01em; }
+  .pitch { color: var(--doux); margin: 0 0 1.5rem; }
+  .chiffres {
+    display: flex; flex-wrap: wrap; gap: .5rem; align-items: stretch;
+    margin: 0 0 1.75rem; padding: 0; list-style: none;
+  }
+  .chiffres li {
+    flex: 1 1 8rem; background: var(--carte); border: 1px solid var(--bord);
+    border-radius: 8px; padding: .6rem .75rem;
+  }
+  .chiffres b { display: block; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+  .chiffres span { color: var(--doux); font-size: .8rem; }
+  .chiffres li:last-child b { color: var(--ok); }
+  form { display: grid; gap: .75rem; margin-bottom: 1.5rem; }
+  textarea {
+    width: 100%; min-height: 4.5rem; resize: vertical; padding: .7rem .8rem;
+    border: 1px solid var(--bord); border-radius: 8px;
+    background: var(--carte); color: inherit; font: inherit;
+  }
+  textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .barre { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+  fieldset { border: 0; padding: 0; margin: 0; display: flex; gap: .5rem; }
+  label.persona {
+    border: 1px solid var(--bord); border-radius: 999px; padding: .3rem .8rem;
+    cursor: pointer; font-size: .85rem; background: var(--carte);
+  }
+  label.persona:has(:checked) { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  label.persona input { position: absolute; opacity: 0; pointer-events: none; }
+  button {
+    margin-left: auto; padding: .5rem 1.1rem; border: 0; border-radius: 8px;
+    background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: progress; }
+  .carte {
+    background: var(--carte); border: 1px solid var(--bord);
+    border-radius: 10px; padding: 1rem 1.1rem; margin-bottom: 1rem;
+  }
+  .carte h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em;
+              color: var(--doux); margin: 0 0 .6rem; font-weight: 600; }
+  .reponse { font-size: 1.05rem; margin: 0; white-space: pre-wrap; }
+  .confiance { color: var(--doux); font-size: .85rem; margin: .6rem 0 0; }
+  ul.sources { list-style: none; padding: 0; margin: 0; display: grid; gap: .5rem; }
+  .badge {
+    display: inline-block; background: var(--code-fond); border: 1px solid var(--bord);
+    border-radius: 999px; padding: .15rem .6rem; font-family: ui-monospace, monospace;
+    font-size: .8rem;
+  }
+  pre {
+    margin: 0; padding: .6rem .7rem; background: var(--code-fond);
+    border: 1px solid var(--bord); border-radius: 6px;
+    overflow-x: auto; font-size: .78rem; line-height: 1.5;
+  }
+  dl.usage { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+             gap: .75rem; margin: 0; }
+  dl.usage dt { color: var(--doux); font-size: .75rem; }
+  dl.usage dd { margin: .1rem 0 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .erreur { border-color: var(--accent); }
+  .vide { color: var(--doux); font-style: italic; }
+  footer { color: var(--doux); font-size: .82rem; margin-top: 2rem; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<main id="racine"></main>
+
+<script>
+const html = htm.bind(React.createElement);
+const { useState } = React;
+
+// Figés à la main, depuis eval/runs/. Les recopier ici plutôt que les calculer
+// évite d'exposer une route qui lirait des artefacts — et ils ne bougent qu'aux
+// jalons.
+const CHIFFRES = [
+  { valeur: "53,8 %", quoi: "LLM nu" },
+  { valeur: "92,5 %", quoi: "+ outil SQL" },
+  { valeur: "93,8 %", quoi: "agent complet" },
+];
+
+const EXEMPLES = [
+  "Quel Pokémon mange 400 kg de nourriture par jour selon le Pokédex, et quel est son numéro national ?",
+  "Quels Pokémon de type Eau ont une Vitesse de base strictement supérieure à 130 ?",
+  "D'après le Pokédex, que Téraclope cherche-t-il à avaler ?",
+];
+
+const euros = (n) => n < 0.01 ? `${(n * 100).toFixed(3)} ¢` : `${n.toFixed(4)} $`;
+
+/** `pokedex:dusclops/black` est une clé, pas une étiquette : on la montre telle
+ *  quelle. Une requête SQL, elle, se lit sur plusieurs lignes. */
+function Source({ texte }) {
+  if (texte.startsWith("pokedex:")) {
+    return html`<li><span className="badge">${texte}</span></li>`;
+  }
+  return html`<li><pre>${texte}</pre></li>`;
+}
+
+function Usage({ usage }) {
+  const champs = [
+    ["Modèle", usage.model],
+    ["Tokens", `${usage.input_tokens} / ${usage.output_tokens}`],
+    ["Coût", euros(usage.cost_usd)],
+    ["Latence", `${(usage.latency_ms / 1000).toFixed(1)} s`],
+    ["Cache", usage.cache_hit ? "servi" : "appel réel"],
+  ];
+  return html`
+    <section className="carte">
+      <h2>Consommation</h2>
+      <dl className="usage">
+        ${champs.map(([k, v]) => html`
+          <div key=${k}><dt>${k}</dt><dd>${v}</dd></div>`)}
+      </dl>
+    </section>`;
+}
+
+function App() {
+  const [question, setQuestion] = useState(EXEMPLES[0]);
+  const [persona, setPersona] = useState("pokedex");
+  const [enCours, setEnCours] = useState(false);
+  const [reponse, setReponse] = useState(null);
+  const [erreur, setErreur] = useState(null);
+
+  async function envoyer(e) {
+    e.preventDefault();
+    if (!question.trim() || enCours) return;
+    setEnCours(true); setErreur(null); setReponse(null);
+    try {
+      const r = await fetch("/ask", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question, persona }),
+      });
+      const corps = await r.json();
+      // 422 (refus du modèle), 502 (hors schéma), 503 (clé rejetée) portent
+      // tous un `detail` actionnable : l'afficher vaut mieux qu'un « oups ».
+      if (!r.ok) throw new Error(corps.detail || `HTTP ${r.status}`);
+      setReponse(corps);
+    } catch (err) {
+      setErreur(err.message);
+    } finally {
+      setEnCours(false);
+    }
+  }
+
+  return html`
+    <h1>Pokébuddy</h1>
+    <p className="pitch">
+      Un agent qui interroge une base de faits et un corpus de Pokédex,
+      puis <strong>cite ses sources</strong> — plutôt que de répondre de mémoire.
+    </p>
+
+    <ul className="chiffres">
+      ${CHIFFRES.map(c => html`
+        <li key=${c.quoi}><b>${c.valeur}</b><span>${c.quoi}</span></li>`)}
+      <li><b>+40,0</b><span>points gagnés</span></li>
+    </ul>
+
+    <form onSubmit=${envoyer}>
+      <textarea
+        value=${question}
+        onChange=${e => setQuestion(e.target.value)}
+        placeholder="Poser une question sur les Pokémon…"
+        aria-label="Question" />
+      <div className="barre">
+        <fieldset>
+          ${["pokedex", "factual"].map(p => html`
+            <label className="persona" key=${p}>
+              <input type="radio" name="persona" value=${p}
+                     checked=${persona === p}
+                     onChange=${() => setPersona(p)} />
+              ${p === "pokedex" ? "voix du Pokédex" : "factuel"}
+            </label>`)}
+        </fieldset>
+        <button type="submit" disabled=${enCours}>
+          ${enCours ? "Recherche…" : "Demander"}
+        </button>
+      </div>
+    </form>
+
+    ${erreur && html`
+      <section className="carte erreur"><h2>Erreur</h2><p className="reponse">${erreur}</p></section>`}
+
+    ${reponse && html`
+      <${React.Fragment}>
+        <section className="carte">
+          <h2>Réponse</h2>
+          <p className="reponse">${reponse.answer}</p>
+          <p className="confiance">
+            Confiance annoncée par le modèle : ${(reponse.confidence * 100).toFixed(0)} %
+          </p>
+        </section>
+
+        <section className="carte">
+          <h2>Sources — ${reponse.sources.length}</h2>
+          ${reponse.sources.length
+            ? html`<ul className="sources">
+                ${reponse.sources.map((s, i) => html`<${Source} key=${i} texte=${s} />`)}
+              </ul>`
+            : html`<p className="vide">
+                Aucun outil n'a abouti : réponse de mémoire, donc invérifiable.
+                C'est un repli assumé, pas une erreur.
+              </p>`}
+        </section>
+
+        <${Usage} usage=${reponse.usage} />
+      </${React.Fragment}>`}
+
+    <footer>
+      Exemples : ${EXEMPLES.map((ex, i) => html`
+        <${React.Fragment} key=${i}>
+          ${i > 0 ? " · " : ""}
+          <a href="#" onClick=${e => { e.preventDefault(); setQuestion(ex); }}>
+            ${ex.length > 46 ? ex.slice(0, 46) + "…" : ex}
+          </a>
+        </${React.Fragment}>`)}
+      <br />Documentation de l'API : <a href="/docs">/docs</a>
+    </footer>`;
+}
+
+ReactDOM.createRoot(document.getElementById("racine")).render(html`<${App} />`);
+</script>
+</body>
+</html>

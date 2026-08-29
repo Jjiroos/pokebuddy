@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import openai
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.api.routes import router
 from src.llm.factory import get_provider
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 @asynccontextmanager
@@ -50,6 +54,11 @@ def create_app() -> FastAPI:
             status_code=status.HTTP_502_BAD_GATEWAY,
             content={"detail": f"Le fournisseur LLM est indisponible : {exc.__class__.__name__}"},
         )
+
+    # Monté en dernier, et c'est ce qui compte : Starlette essaie les routes dans
+    # l'ordre d'enregistrement, donc /ask, /health, /docs et /openapi.json sont
+    # servis avant que ce montage n'attrape le reste. L'inverse les masquerait.
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="front")
 
     return app
 
