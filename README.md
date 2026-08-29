@@ -380,6 +380,15 @@ Documentation interactive sur <http://localhost:8000/docs>.
 `gitleaks` et `ruff` tournent en pre-commit, installés par `make setup`. `.env`
 est ignoré par git depuis un commit antérieur à l'écriture de toute clé.
 
+La CI (`.github/workflows/ci.yml`) rejoue le lint et les 171 tests à chaque
+push, plus un scan `gitleaks` de l'historique. **Elle ne fait pas tourner
+l'évaluation**, et c'est délibéré : celle-ci exige une base ingérée et une clé
+plafonnée à 1 000 requêtes par jour, et la reconstruire à chaque push voudrait
+dire retélécharger deux API communautaires — dont l'une exige le cache local
+dans sa politique d'usage. Ce qui rend cette CI possible en trente lignes,
+c'est qu'aucun test du dépôt ne sort sur le réseau ni ne touche PostgreSQL,
+contrainte tenue depuis le jalon 1.
+
 ---
 
 ## Dépannage
@@ -570,6 +579,64 @@ sont des propriétés de la source, pas de l'ingestion — à garder en tête en
 
 ---
 
+## Ce que je ferais différemment en production
+
+Ce dépôt est construit pour **mesurer**, et plusieurs choix qui servent bien la
+mesure seraient de mauvais choix pour servir des utilisateurs. Les distinguer
+me paraît plus utile que de prétendre que le prototype est prêt.
+
+**Le SQL libre écrit par un modèle, je ne l'expédierais pas tel quel.** Quatre
+couches de validation et un rôle sans droit d'écriture, ça tient — mais la
+surface reste « un modèle écrit du code qui s'exécute ». En production, je
+passerais à un **catalogue fermé de requêtes paramétrées** : le modèle choisit
+une requête et remplit ses paramètres, il n'en rédige plus. On perd en
+couverture, on gagne une garantie qui ne dépend plus de la qualité d'un
+validateur. Le SQL libre est le bon outil pour *mesurer* ce qu'un modèle sait
+faire ; ce n'est pas le bon outil pour répondre à des inconnus.
+
+**Le routeur non déterministe serait le premier problème d'exploitation.** La
+même question routée deux fois donne deux décisions (défaut résiduel n° 6).
+Pour un tableau d'évaluation c'est du bruit ; pour un utilisateur qui repose sa
+question, c'est une réponse qui change de nature. Un routage est trop
+structurant pour être tiré au sort : je le sortirais du LLM — règles sur la
+présence d'une entité nommée, ou petit classifieur entraîné sur les décisions
+observées.
+
+**Le cache disque masque un problème au lieu de le résoudre.** Il rend
+l'évaluation reproductible, ce qui est exactement ce qu'on lui demande ici.
+Mais SQLite sur un volume, mono-processus, ne passe pas l'échelle, et surtout :
+en production on veut **mesurer** la variance du modèle, pas la cacher derrière
+une clé de cache.
+
+**Les coûts sont journalisés, pas plafonnés.** `llm_calls` sait après coup ce
+qu'une requête a coûté. Il manque ce qui compte vraiment : un budget par
+utilisateur et un disjoncteur. Un journal n'a jamais arrêté une facture.
+
+**65 questions figées mesurent les régressions sur ce qu'on a pensé à tester.**
+C'est déjà mieux que rien, et c'est insuffisant : les vraies questions des
+utilisateurs ne ressemblent pas à celles qu'on écrit soi-même. Il faudrait
+échantillonner le trafic, annoter, et faire grossir la suite. Le grader
+déterministe ne suit pas à cette échelle — c'est là qu'un juge LLM devient un
+compromis acceptable, **à condition de publier son taux d'accord avec un
+annotateur humain**, faute de quoi on remplace une mesure par une opinion.
+
+**Le corpus est figé et réingéré à la main.** Il faudrait une ingestion
+incrémentale et versionnée. La dimension du plongement est en dur dans la
+colonne `vector(384)` : c'est volontaire — changer de modèle impose une
+migration, donc une réindexation consciente — mais en production cela veut dire
+qu'un changement de modèle est un événement d'exploitation, pas une variable
+d'environnement.
+
+### Ce que je ne changerais pas
+
+Les citations obligatoires, le rôle en lecture seule, le coût qui voyage dans
+le type de retour plutôt que dans un journal, le refus de comparer deux runs
+dont l'empreinte de questions diffère, et le repli sur la réponse de mémoire
+plutôt que sur une erreur HTTP. Ces cinq-là ont été écrits pour la mesure et se
+trouvent être, aussi, ce qu'on veut en production.
+
+---
+
 ## Feuille de route
 
 | Jalon | Contenu | État |
@@ -578,7 +645,8 @@ sont des propriétés de la source, pas de l'ingestion — à garder en tête en
 | 2 | 40 questions d'évaluation, harnais, ligne de base chiffrée | **terminé** |
 | 3 | Outil SQL contraint, cartes du JCC, citations obligatoires | **terminé** |
 | 4 | Agent LangGraph, RAG sur le lore, cas dégradés, traces Langfuse | **terminé** |
-| 5 | Défauts résiduels (recherche par espèce d'abord), CI, image publiée, front React, comparatif multi-fournisseurs | |
+| 5 | Défauts résiduels du jalon 4, CI, image publiée, front React | en cours |
+| 6 | Comparatif multi-fournisseurs — le §9 du plan | |
 
 ---
 

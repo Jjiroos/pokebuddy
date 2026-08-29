@@ -1,0 +1,60 @@
+# Ce que la CI vérifie, et ce qu'elle ne vérifie pas.
+#
+# Elle fait tourner le lint et les 171 tests. Elle ne fait **pas** tourner
+# l'évaluation, et c'est une décision, pas un oubli : celle-ci exige une base
+# ingérée (~1 350 Pokémon, ~23 500 cartes, 5 233 entrées de Pokédex avec leurs
+# plongements) et une clé de fournisseur plafonnée à 1 000 requêtes par jour.
+# La reconstruire à chaque push voudrait dire retélécharger PokéAPI et TCGdex —
+# deux API communautaires gratuites, dont l'une **exige** le cache local dans sa
+# politique d'usage. Une CI qui les martèle serait un mauvais citoyen, et le run
+# durerait une heure pour un résultat que le cache disque rend de toute façon
+# reproductible en local.
+#
+# Ce qui rend cette CI utile malgré tout : aucun test du dépôt ne sort sur le
+# réseau ni ne touche PostgreSQL. C'est une contrainte tenue depuis le jalon 1,
+# et c'est elle qui permet à ce fichier de tenir en trente lignes.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  qualite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # gitleaks a besoin de l'historique pour scanner les commits, pas
+          # seulement l'arbre de travail.
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.19"
+          enable-cache: true
+
+      - run: uv sync --all-groups --frozen
+
+      # `--fix` en pre-commit, jamais ici : en local on corrige, en CI on
+      # constate. Une CI qui réécrit le code masque ce qu'elle devait signaler.
+      - name: ruff (lint)
+        run: uv run ruff check .
+
+      - name: ruff (format)
+        run: uv run ruff format --check .
+
+      - name: tests
+        run: uv run pytest -q
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
