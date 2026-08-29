@@ -59,10 +59,16 @@ DEFAULT_PERSONAS = {
 
 # Le cache SQLite sérialise ses écritures, et les paliers gratuits plafonnent en
 # tokens par minute autant qu'en requêtes : celui de Groq autorise 30 req/min
-# mais 8 000 tokens/min, soit une dizaine d'appels. Le provider rejoue les 429,
-# mais un run qui passe son temps en backoff ne mesure plus la latence — deux
-# requêtes en vol tiennent sous les deux plafonds.
-CONCURRENCY = 2
+# mais **8 000 tokens/min**, et c'est ce second plafond qui mord.
+#
+# Ramené de 2 à 1 au jalon 5, après un run où 78 questions sur 80 sont tombées
+# en 429. L'invite SQL porte le schéma complet — près de mille tokens à chaque
+# génération de requête — si bien qu'une poignée d'appels épuise la minute.
+# Deux requêtes en vol ne doublent alors pas le débit : elles se disputent le
+# même plafond, échouent, et rejouent. Une seule requête à la fois se cale
+# naturellement sur le rythme autorisé, et un run qui aboutit du premier coup
+# coûte moins qu'un run rejoué quatre fois.
+CONCURRENCY = 1
 REQUEST_TIMEOUT_S = 180.0
 
 
