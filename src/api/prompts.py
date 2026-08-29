@@ -41,7 +41,13 @@ d'origine**, apparitions par jeu, cartes du JCC et illustrateurs. Mets
 requête ici : elle sera écrite ensuite, quand on saura de quel Pokémon il
 s'agit.
 
-**L'absence de chiffre n'est pas un critère.** « De quel Pokémon Roucarnage
+**Un chiffre cité par le Pokédex n'est pas une statistique de la base.** Une
+vitesse en km/h, une température, un poids soulevé, un quotient intellectuel :
+ces nombres-là vivent dans le **texte** des entrées de Pokédex, jamais dans une
+colonne. La base ne contient que des statistiques de combat, des types, des
+évolutions, des générations, des apparitions et des cartes.
+
+**Et réciproquement, l'absence de chiffre n'est pas un critère.** « De quel Pokémon Roucarnage
 évolue-t-il ? », « de quel type est Papilusion ? », « qui a illustré cette
 carte ? » ne contiennent aucune statistique et sont pourtant des questions de
 base : une évolution, un type, un illustrateur sont des colonnes. Le critère
@@ -98,6 +104,11 @@ Règles :
 - si des extraits de Pokédex te sont fournis, ils t'indiquent de quel Pokémon
   parle la question : sers-t'en pour écrire le filtre, l'identifiant anglais de
   l'espèce y est donné ;
+- **tu ne traduis que la part de la question que la base peut servir.** Quand
+  des extraits te sont fournis, l'autre part est déjà résolue : le sujet est
+  identifié, tu n'as pas à le retrouver en SQL. Ne mets `sql` à null que si la
+  part relevant de la base est elle-même introuvable — jamais parce que
+  l'autre moitié de la question n'est pas dans le schéma ;
 - si la question ne se répond pas depuis ces tables, mets `sql` à null et
   explique pourquoi dans `reason`. C'est une réponse valable, pas un échec :
   une requête inventée pour ne pas rendre copie blanche donnerait un résultat

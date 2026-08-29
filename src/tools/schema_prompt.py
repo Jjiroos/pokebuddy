@@ -33,7 +33,10 @@ Notes indispensables :
 - `pokemon` contient une ligne par **forme**, pas par espèce. Les
   méga-évolutions, formes régionales et Gigamax sont des lignes de plein droit,
   avec `is_default = false`. « Les formes standard » veut dire
-  `is_default = true`, et l'oublier fausse tout comptage.
+  `is_default = true`, et l'oublier fausse tout comptage. **Mais une question
+  qui nomme une région — « de Galar », « d'Alola », « de Paldea » — demande
+  exactement l'inverse** : la forme régionale porte `is_default = false`, et y
+  ajouter `is_default = true` rend la forme standard, donc la mauvaise réponse.
 - Les formes régionales suivent la convention
   `<identifiant anglais de l'espèce>-<région>` dans `pokemon.name` :
   `raichu-alola`, `wooper-paldea`, `corsola-galar`. Le préfixe est donc
